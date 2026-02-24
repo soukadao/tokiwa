@@ -1,3 +1,4 @@
+import { TZDate } from "@date-fns/tz";
 import { generateId } from "../core/index.js";
 import { Logger } from "../core/logger.js";
 import { Cron } from "./cron.js";
@@ -139,7 +140,7 @@ export class Scheduler {
 
     const delay =
       this.checkIntervalMs === DEFAULT_CHECK_INTERVAL_MS
-        ? Scheduler.getDelayUntilNextMinute(new Date())
+        ? Scheduler.getDelayUntilNextMinute(new TZDate())
         : this.checkIntervalMs;
     this.timerId = setTimeout(this.handleTick, delay);
   }
@@ -157,7 +158,7 @@ export class Scheduler {
    * 同一分内での重複実行を防止するためミニットキーで管理する。
    */
   private async checkAndExecuteJobs(): Promise<void> {
-    const now = new Date();
+    const now = new TZDate();
     const minuteKey = Scheduler.buildMinuteKey(now);
     const tasks: Promise<void>[] = [];
 
@@ -232,7 +233,7 @@ export class Scheduler {
    * @returns 次の分境界までのミリ秒数
    */
   private static getDelayUntilNextMinute(now: Date): number {
-    const nextMinute = new Date(now);
+    const nextMinute = new TZDate(now);
     nextMinute.setSeconds(RESET_SECONDS, RESET_MILLISECONDS);
     nextMinute.setMinutes(nextMinute.getMinutes() + NEXT_MINUTE_INCREMENT);
     return nextMinute.getTime() - now.getTime();

@@ -1,3 +1,4 @@
+import { TZDate } from "@date-fns/tz";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { RuntimeError } from "../core/index.js";
 import { Scheduler, type SchedulerLogger } from "./scheduler.js";
@@ -12,7 +13,7 @@ const JOB_NAME_B = "jobB";
 const RUNS_ONCE = 1;
 const NO_RUNS = 0;
 const ZERO = 0;
-const NON_MATCHING_TIME = new Date(2024, 0, 2, 0, 0, 30);
+const NON_MATCHING_TIME = new TZDate(2024, 0, 2, 0, 0, 30);
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -49,7 +50,7 @@ test("getNextExecutionTime returns null for missing job", () => {
 });
 
 test("getNextExecutionTime returns the next execution", () => {
-  vi.setSystemTime(new Date(2024, 0, 1, 0, 2, 30));
+  vi.setSystemTime(new TZDate(2024, 0, 1, 0, 2, 30));
   const scheduler = new Scheduler();
   const jobId = scheduler.addJob("*/5 * * * *", JOB_NAME, () => {});
 
@@ -61,7 +62,7 @@ test("getNextExecutionTime returns the next execution", () => {
 });
 
 test("start executes a matching job on the next minute", async () => {
-  vi.setSystemTime(new Date(2024, 0, 1, 0, 0, 30));
+  vi.setSystemTime(new TZDate(2024, 0, 1, 0, 0, 30));
   const scheduler = new Scheduler();
   let runs = 0;
 
@@ -108,7 +109,7 @@ test("scheduleNextCheck does nothing when stopped", () => {
 });
 
 test("handler errors are logged", async () => {
-  vi.setSystemTime(new Date(2024, 0, 1, 0, 0, 30));
+  vi.setSystemTime(new TZDate(2024, 0, 1, 0, 0, 30));
   const logger: SchedulerLogger = {
     error: vi.fn(),
   };
@@ -126,7 +127,7 @@ test("handler errors are logged", async () => {
 });
 
 test("stop cancels the pending check", async () => {
-  vi.setSystemTime(new Date(2024, 0, 1, 0, 0, 30));
+  vi.setSystemTime(new TZDate(2024, 0, 1, 0, 0, 30));
   const scheduler = new Scheduler();
   let runs = 0;
 
@@ -142,7 +143,7 @@ test("stop cancels the pending check", async () => {
 });
 
 test("jobs run in parallel within the same tick", async () => {
-  vi.setSystemTime(new Date(2024, 0, 1, 0, 0, 30));
+  vi.setSystemTime(new TZDate(2024, 0, 1, 0, 0, 30));
   const scheduler = new Scheduler({ checkIntervalMs: ONE_MINUTE_MS });
   let running = 0;
   let maxRunning = 0;
@@ -193,7 +194,7 @@ test("checkAndExecuteJobs skips non-matching jobs", async () => {
 });
 
 test("checkAndExecuteJobs avoids duplicate runs within a minute", async () => {
-  vi.setSystemTime(new Date(2024, 0, 1, 0, 0, 30));
+  vi.setSystemTime(new TZDate(2024, 0, 1, 0, 0, 30));
   const scheduler = new Scheduler({ checkIntervalMs: ONE_MINUTE_MS });
   let runs = 0;
 
@@ -211,7 +212,7 @@ test("checkAndExecuteJobs avoids duplicate runs within a minute", async () => {
 });
 
 test("stop waits for in-flight jobs", async () => {
-  vi.setSystemTime(new Date(2024, 0, 1, 0, 0, 30));
+  vi.setSystemTime(new TZDate(2024, 0, 1, 0, 0, 30));
   const scheduler = new Scheduler({ checkIntervalMs: ONE_MINUTE_MS });
   let resolveJob: (() => void) | null = null;
   const gate = new Promise<void>((resolve) => {

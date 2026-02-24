@@ -1,6 +1,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { TZDate } from "@date-fns/tz";
 import { expect, test } from "vitest";
 import { RuntimeError } from "../core/errors.js";
 import { FileSystem } from "../core/file-system.js";
@@ -29,15 +30,15 @@ const EMPTY_RECORDS = 0;
 const LIMIT = 1;
 const ERROR_MESSAGE = "boom";
 const CAUSE_MESSAGE = "cause";
-const TIMELINE_TIME = new Date("2024-01-01T00:00:02.000Z");
+const TIMELINE_TIME = new TZDate("2024-01-01T00:00:02.000Z");
 const OTHER_FILE = `${RUNS_DIR}/skip.txt`;
 const FIRST_ATTEMPT = 1;
 const NEXT_DELAY_MS = 0;
 const TIMELINE_ENTRIES = 3;
 const OBJECT_STRING = "[object Object]";
-const RUN_COMPLETE_TIME = new Date("2024-01-01T00:00:03.000Z");
-const NODE_START_TIME = new Date("2024-01-01T00:00:04.000Z");
-const NODE_COMPLETE_TIME = new Date("2024-01-01T00:00:05.000Z");
+const RUN_COMPLETE_TIME = new TZDate("2024-01-01T00:00:03.000Z");
+const NODE_START_TIME = new TZDate("2024-01-01T00:00:04.000Z");
+const NODE_COMPLETE_TIME = new TZDate("2024-01-01T00:00:05.000Z");
 const NODE_DURATION_MS = 50;
 const FULL_TIMELINE_ENTRIES = 4;
 
@@ -124,8 +125,8 @@ test("toRunRecord serializes errors and timeline", () => {
     runId: RUN_ID,
     workflowId: WORKFLOW_ID,
     status: STATUS,
-    startedAt: new Date(STARTED_AT),
-    finishedAt: new Date(FINISHED_AT),
+    startedAt: new TZDate(STARTED_AT),
+    finishedAt: new TZDate(FINISHED_AT),
     durationMs: DURATION_MS,
     results: { [RESULT_KEY]: RESULT_VALUE },
     errors: { node: error },
@@ -165,8 +166,8 @@ test("toRunRecord stringifies non-error causes", () => {
     runId: RUN_ID,
     workflowId: WORKFLOW_ID,
     status: STATUS,
-    startedAt: new Date(STARTED_AT),
-    finishedAt: new Date(FINISHED_AT),
+    startedAt: new TZDate(STARTED_AT),
+    finishedAt: new TZDate(FINISHED_AT),
     durationMs: DURATION_MS,
     results: {},
     errors: { [NODE_ID]: error },
@@ -183,8 +184,8 @@ test("toRunRecord serializes all timeline entry types", () => {
     runId: RUN_ID,
     workflowId: WORKFLOW_ID,
     status: STATUS,
-    startedAt: new Date(STARTED_AT),
-    finishedAt: new Date(FINISHED_AT),
+    startedAt: new TZDate(STARTED_AT),
+    finishedAt: new TZDate(FINISHED_AT),
     durationMs: DURATION_MS,
     results: {},
     errors: {},

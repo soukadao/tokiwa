@@ -1,3 +1,4 @@
+import { TZDate } from "@date-fns/tz";
 import type { FileSystem } from "../core/file-system.js";
 import { FileSystem as DefaultFileSystem } from "../core/file-system.js";
 import { RuntimeError } from "../core/index.js";
@@ -219,7 +220,7 @@ export class DeltaConversationStore implements ConversationStore {
     diff: MemoryDiff,
   ): Promise<void> {
     const entry: DeltaEntry = {
-      timestamp: new Date().toISOString(),
+      timestamp: new TZDate().toISOString(),
       diff,
     };
     const line = `${JSON.stringify(entry)}${LINE_ENDING}`;

@@ -1,3 +1,4 @@
+import { TZDate } from "@date-fns/tz";
 import { generateId } from "../core/index.js";
 import type { Event } from "./event.js";
 
@@ -31,7 +32,7 @@ export class Notification {
     this.id = generateId();
     this.level = init.level ?? "info";
     this.message = init.message;
-    this.timestamp = init.timestamp ?? new Date();
+    this.timestamp = init.timestamp ?? new TZDate();
     this.data = init.data;
     this.event = init.event;
   }

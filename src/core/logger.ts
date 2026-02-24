@@ -1,3 +1,5 @@
+import { TZDate } from "@date-fns/tz";
+
 export const LOG_LEVEL = {
   emergency: 0,
   alert: 1,
@@ -121,7 +123,7 @@ export class Logger {
     if (LOG_LEVEL[level] > this.levelValue) {
       return;
     }
-    this.sink({ level, message, timestamp: new Date(), context });
+    this.sink({ level, message, timestamp: new TZDate(), context });
   }
 
   /**

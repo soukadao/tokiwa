@@ -1,3 +1,5 @@
+import { TZDate } from "@date-fns/tz";
+
 /**
  * オーケストレーターのメトリクス情報。
  */
@@ -55,6 +57,6 @@ export class Snapshot {
     this.mode = init.mode ?? "all";
     this.queueSize = init.queueSize;
     this.metrics = init.metrics;
-    this.timestamp = init.timestamp ?? new Date();
+    this.timestamp = init.timestamp ?? new TZDate();
   }
 }

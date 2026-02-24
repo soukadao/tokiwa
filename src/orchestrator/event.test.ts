@@ -1,3 +1,4 @@
+import { TZDate } from "@date-fns/tz";
 import { expect, test } from "vitest";
 import { InvalidArgumentError } from "../core/errors.js";
 import { Event } from "./event.js";
@@ -7,7 +8,7 @@ const PAYLOAD = { id: "A-1" };
 const METADATA = { correlationId: "corr" };
 const MIN_ID_LENGTH = 1;
 
-const FIXED_DATE = new Date("2024-01-01T00:00:00.000Z");
+const FIXED_DATE = new TZDate("2024-01-01T00:00:00.000Z");
 
 test("event creates defaults", () => {
   const event = Event.create(EVENT_TYPE, PAYLOAD, METADATA);
@@ -16,7 +17,7 @@ test("event creates defaults", () => {
   expect(event.payload).toEqual(PAYLOAD);
   expect(event.metadata).toEqual(METADATA);
   expect(event.id.length).toBeGreaterThanOrEqual(MIN_ID_LENGTH);
-  expect(event.timestamp).toBeInstanceOf(Date);
+  expect(event.timestamp).toBeInstanceOf(TZDate);
 });
 
 test("event accepts timestamp override", () => {

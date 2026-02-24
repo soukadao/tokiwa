@@ -1,3 +1,4 @@
+import { TZDate } from "@date-fns/tz";
 import { InvalidArgumentError, RuntimeError } from "../core/index.js";
 
 /**
@@ -309,8 +310,8 @@ export class Cron {
    * Returns the next execution time after the given date.
    * Seconds and milliseconds are cleared before searching.
    */
-  public getNextExecution(after: Date = new Date()): Date {
-    const next = new Date(after);
+  public getNextExecution(after: Date = new TZDate()): Date {
+    const next = new TZDate(after);
     next.setSeconds(RESET_SECONDS, RESET_MILLISECONDS);
     next.setMinutes(next.getMinutes() + NEXT_MINUTE_INCREMENT);
 

@@ -1,3 +1,4 @@
+import { TZDate } from "@date-fns/tz";
 import { generateId, InvalidArgumentError } from "../core/index.js";
 
 export interface EventMetadata {
@@ -40,7 +41,7 @@ export class Event<TPayload = unknown> {
     this.id = generateId();
     this.type = init.type;
     this.payload = init.payload as TPayload;
-    this.timestamp = init.timestamp ?? new Date();
+    this.timestamp = init.timestamp ?? new TZDate();
     this.metadata = init.metadata ?? {};
   }
 

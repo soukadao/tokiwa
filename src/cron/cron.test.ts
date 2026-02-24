@@ -1,3 +1,4 @@
+import { TZDate } from "@date-fns/tz";
 import { expect, test } from "vitest";
 import { Cron } from "./cron.js";
 
@@ -38,26 +39,26 @@ test("parses step ranges with a single start", () => {
 });
 
 test("matches evaluates date fields", () => {
-  const date = new Date(2024, 0, 2, 3, 4, 5);
+  const date = new TZDate(2024, 0, 2, 3, 4, 5);
   const expression = `${date.getMinutes()} ${date.getHours()} ${date.getDate()} ${date.getMonth() + 1} ${date.getDay()}`;
   const cron = new Cron(expression);
 
   expect(cron.matches(date)).toBe(true);
-  expect(cron.matches(new Date(date.getTime() + 60_000))).toBe(false);
+  expect(cron.matches(new TZDate(date.getTime() + 60_000))).toBe(false);
 });
 
 test("getNextExecution returns the next matching minute", () => {
   const cron = new Cron(FIVE_MINUTES);
-  const after = new Date(2024, 0, 1, 0, 2, 30, 500);
+  const after = new TZDate(2024, 0, 1, 0, 2, 30, 500);
   const next = cron.getNextExecution(after);
-  const expected = new Date(2024, 0, 1, 0, 5, 0, 0);
+  const expected = new TZDate(2024, 0, 1, 0, 5, 0, 0);
 
   expect(next.getTime()).toBe(expected.getTime());
 });
 
 test("getNextExecution rolls to next year when month is not allowed", () => {
   const cron = new Cron(JAN_1ST);
-  const after = new Date(2024, 0, 2, 0, 0, 0, 0);
+  const after = new TZDate(2024, 0, 2, 0, 0, 0, 0);
   const next = cron.getNextExecution(after);
 
   expect(next.getFullYear()).toBe(2025);
@@ -69,7 +70,7 @@ test("getNextExecution rolls to next year when month is not allowed", () => {
 
 test("getNextExecution skips to the next matching day", () => {
   const cron = new Cron(DAY_15);
-  const after = new Date(2024, 0, 1, 0, 0, 0, 0);
+  const after = new TZDate(2024, 0, 1, 0, 0, 0, 0);
   const next = cron.getNextExecution(after);
 
   expect(next.getDate()).toBe(15);
@@ -79,7 +80,7 @@ test("getNextExecution skips to the next matching day", () => {
 
 test("getNextExecution carries when minute rolls", () => {
   const cron = new Cron(HOUR_5_OR_6);
-  const after = new Date(2024, 0, 1, 5, 30, 0, 0);
+  const after = new TZDate(2024, 0, 1, 5, 30, 0, 0);
   const next = cron.getNextExecution(after);
 
   expect(next.getHours()).toBe(6);
@@ -94,9 +95,9 @@ test("getNextExecution throws when no match is found within the limit", () => {
   cronConstructor.MAX_ITERATIONS = 1;
 
   try {
-    expect(() => cron.getNextExecution(new Date(2024, 0, 1, 0, 0, 0))).toThrow(
-      "Could not find next execution time within 4 years",
-    );
+    expect(() =>
+      cron.getNextExecution(new TZDate(2024, 0, 1, 0, 0, 0)),
+    ).toThrow("Could not find next execution time within 4 years");
   } finally {
     cronConstructor.MAX_ITERATIONS = previousLimit;
   }

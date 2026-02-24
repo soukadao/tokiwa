@@ -1,3 +1,4 @@
+import { TZDate } from "@date-fns/tz";
 import { expect, test } from "vitest";
 import { Snapshot } from "./snapshot.js";
 
@@ -14,7 +15,7 @@ const METRICS = {
   workflowErrors: WORKFLOW_ERRORS,
 };
 
-const NOW = new Date("2024-01-01T00:00:00.000Z");
+const NOW = new TZDate("2024-01-01T00:00:00.000Z");
 
 const QUEUE_SIZE = 4;
 const EMPTY_QUEUE = 0;
@@ -29,7 +30,7 @@ test("snapshot defaults", () => {
   expect(snapshot.mode).toBe("all");
   expect(snapshot.queueSize).toBe(QUEUE_SIZE);
   expect(snapshot.metrics).toEqual(METRICS);
-  expect(snapshot.timestamp).toBeInstanceOf(Date);
+  expect(snapshot.timestamp).toBeInstanceOf(TZDate);
 });
 
 test("snapshot accepts overrides", () => {

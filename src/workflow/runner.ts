@@ -1,3 +1,4 @@
+import { TZDate } from "@date-fns/tz";
 import {
   CyclicDependencyError,
   DependencyError,
@@ -273,7 +274,7 @@ export class Runner {
     options: WorkflowRunOptions<Context, Input> = {},
   ): Promise<WorkflowRunResult> {
     const runId = generateId();
-    const startedAt = new Date();
+    const startedAt = new TZDate();
     const results: Record<string, unknown> = {};
     const errors: Record<string, Error> = {};
     const attempts: Record<string, number> = {};
@@ -433,7 +434,7 @@ export class Runner {
       await Promise.race(inFlight);
     }
 
-    const finishedAt = new Date();
+    const finishedAt = new TZDate();
     const status = Object.keys(errors).length > 0 ? "failed" : "succeeded";
     const durationMs = finishedAt.getTime() - startedAt.getTime();
     timeline.push({
@@ -511,7 +512,7 @@ export class Runner {
       try {
         throwIfAborted(signal);
         attempts[node.id] = attempt;
-        const nodeStart = new Date();
+        const nodeStart = new TZDate();
         timeline.push({
           type: "node_start",
           nodeId: node.id,
@@ -553,7 +554,7 @@ export class Runner {
           await options.onNodeComplete(node, output);
         }
 
-        const nodeFinish = new Date();
+        const nodeFinish = new TZDate();
         timeline.push({
           type: "node_complete",
           nodeId: node.id,
@@ -573,7 +574,7 @@ export class Runner {
           timeline.push({
             type: "node_error",
             nodeId: node.id,
-            timestamp: new Date(),
+            timestamp: new TZDate(),
             attempt,
             error: err,
           });
@@ -590,7 +591,7 @@ export class Runner {
           timeline.push({
             type: "node_error",
             nodeId: node.id,
-            timestamp: new Date(),
+            timestamp: new TZDate(),
             attempt,
             error: err,
           });
@@ -606,7 +607,7 @@ export class Runner {
         timeline.push({
           type: "node_retry",
           nodeId: node.id,
-          timestamp: new Date(),
+          timestamp: new TZDate(),
           attempt,
           nextDelayMs,
           error: err,
@@ -629,7 +630,7 @@ export class Runner {
               timeline.push({
                 type: "node_error",
                 nodeId: node.id,
-                timestamp: new Date(),
+                timestamp: new TZDate(),
                 attempt,
                 error: sleepErr,
               });

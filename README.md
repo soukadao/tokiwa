@@ -214,6 +214,7 @@ const workflow = new Workflow({
 ## Cron 仕様
 - 5 フィールド形式（分 時 日 月 曜日）。
 - ローカル時刻で評価します。
+- 内部の日時は `@date-fns/tz` の `TZDate` を使用します（既定はシステムのタイムゾーン）。
 - `dayOfMonth` と `dayOfWeek` は AND 条件です。
 - `Scheduler` は分境界で実行します。`checkIntervalMs` 指定時は固定間隔チェックになります。
 - ジョブIDは自動生成され、登録メソッドは生成IDを返します。
