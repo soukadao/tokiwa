@@ -69,18 +69,17 @@ export class LeaderScheduler implements CronScheduler {
 
   /**
    * 内部スケジューラーにジョブを追加する。
-   * @param id ジョブの一意識別子
    * @param cronExpression cron式文字列
+   * @param name ジョブの表示名
    * @param handler ジョブ実行時に呼び出されるハンドラー
-   * @param name ジョブの表示名（省略可）
+   * @returns 生成されたジョブID
    */
   addJob(
-    id: string,
     cronExpression: string,
+    name: string,
     handler: () => void | Promise<void>,
-    name?: string,
-  ): void {
-    this.scheduler.addJob(id, cronExpression, handler, name);
+  ): string {
+    return this.scheduler.addJob(cronExpression, name, handler);
   }
 
   /**

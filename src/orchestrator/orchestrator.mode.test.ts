@@ -7,7 +7,9 @@ import {
 } from "./orchestrator.js";
 
 const CRON_EXPRESSION = "* * * * *";
-const JOB_ID = "job";
+const JOB_NAME = "cron-job";
+const JOB_ID_PREFIX = "job-";
+const JOB_COUNTER_INCREMENT = 1;
 const ZERO = 0;
 
 class FakeScheduler implements CronScheduler {
@@ -23,8 +25,10 @@ class FakeScheduler implements CronScheduler {
     this.stopCalls += 1;
   }
 
-  addJob(id: string, _cron: string, handler: CronJobHandler): void {
+  addJob(_cron: string, _name: string, handler: CronJobHandler): string {
+    const id = `${JOB_ID_PREFIX}${this.jobs.size + JOB_COUNTER_INCREMENT}`;
     this.jobs.set(id, handler);
+    return id;
   }
 
   removeJob(id: string): boolean {
@@ -45,7 +49,7 @@ test("worker mode does not start scheduler", async () => {
   const scheduler = new FakeScheduler();
   const orchestrator = new Orchestrator({ mode: "worker", scheduler });
 
-  orchestrator.registerCronJob(JOB_ID, CRON_EXPRESSION, () => {});
+  orchestrator.registerCronJob(CRON_EXPRESSION, JOB_NAME, () => {});
 
   orchestrator.start();
   expect(scheduler.startCalls).toBe(ZERO);

@@ -4,7 +4,7 @@ interface Job {
     id: string;
     cron: Cron;
     handler: JobHandler;
-    name?: string;
+    name: string;
 }
 export interface SchedulerLogger {
     error(message: string, context?: Record<string, unknown>): void;
@@ -30,9 +30,13 @@ export declare class Scheduler {
      */
     constructor(options?: SchedulerOptions | number);
     /**
-     * Adds or replaces a job by id.
+     * Adds a job with a generated id.
+     * @param cronExpression cron式文字列
+     * @param name ジョブの表示名
+     * @param handler ジョブ実行時に呼び出されるハンドラー
+     * @returns 生成されたジョブID
      */
-    addJob(id: string, cronExpression: string, handler: JobHandler, name?: string): void;
+    addJob(cronExpression: string, name: string, handler: JobHandler): string;
     /**
      * Removes a job by id.
      */
@@ -102,5 +106,10 @@ export declare class Scheduler {
      * Returns true when a job id is registered.
      */
     isJobScheduled(jobId: string): boolean;
+    /**
+     * 既存ジョブと重複しないIDを生成する。
+     * @returns ジョブID
+     */
+    private generateJobId;
 }
 export {};

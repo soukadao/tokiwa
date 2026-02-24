@@ -88,8 +88,8 @@ const result = await orchestrator.runWorkflow(workflow.id, {
 import { Orchestrator, Scheduler } from "tokiwa";
 
 const CHECK_INTERVAL_MS = 60_000;
-const JOB_HEARTBEAT = "heartbeat";
-const JOB_NIGHTLY = "nightly";
+const JOB_HEARTBEAT_NAME = "heartbeat";
+const JOB_NIGHTLY_NAME = "nightly";
 const CRON_EVERY_5_MINUTES = "*/5 * * * *";
 const CRON_DAILY_MIDNIGHT = "0 0 * * *";
 const EVENT_TYPE = "system.heartbeat";
@@ -98,11 +98,15 @@ const scheduler = new Scheduler({ checkIntervalMs: CHECK_INTERVAL_MS });
 const orchestrator = new Orchestrator({ scheduler });
 
 orchestrator.registerWorkflow(workflow);
-orchestrator.registerCronEvent(JOB_HEARTBEAT, CRON_EVERY_5_MINUTES, EVENT_TYPE);
+orchestrator.registerCronEvent(
+  CRON_EVERY_5_MINUTES,
+  EVENT_TYPE,
+  JOB_HEARTBEAT_NAME,
+);
 orchestrator.registerCronWorkflow(
-  JOB_NIGHTLY,
   CRON_DAILY_MIDNIGHT,
   workflow.id,
+  JOB_NIGHTLY_NAME,
 );
 
 orchestrator.start();
@@ -212,15 +216,17 @@ const workflow = new Workflow({
 - ローカル時刻で評価します。
 - `dayOfMonth` と `dayOfWeek` は AND 条件です。
 - `Scheduler` は分境界で実行します。`checkIntervalMs` 指定時は固定間隔チェックになります。
+- ジョブIDは自動生成され、登録メソッドは生成IDを返します。
+- ジョブ名（`name`）は必須です。
 
 ## API サマリ
 - `Orchestrator`
   - `start()` / `stop(): Promise<void>` / `drain()`
   - `publish(type, payload, metadata?)` / `enqueue(event)`
   - `registerWorkflow(workflow, trigger?, options?)` / `unregisterWorkflow(workflowId)`
-  - `registerCronJob(jobId, cronExpression, handler, name?)`
-  - `registerCronEvent(jobId, cronExpression, eventType, payload?, metadata?, name?)`
-  - `registerCronWorkflow(jobId, cronExpression, workflowId, options?, name?)`
+  - `registerCronJob(cronExpression, name, handler)`
+  - `registerCronEvent(cronExpression, eventType, name, payload?, metadata?)`
+  - `registerCronWorkflow(cronExpression, workflowId, name, options?)`
   - `removeCronJob(jobId)` / `isCronJobScheduled(jobId)`
   - `runWorkflow(workflowId, options?)`
   - `snapshot(): Promise<Snapshot>`
@@ -232,9 +238,9 @@ const workflow = new Workflow({
 - `Runner`
   - `run(workflow, options?)`（`WorkflowRunResult` に `timeline` / `attempts` / `memory` が含まれます）
 - `Scheduler`
-  - `start()` / `stop()` / `addJob()` / `removeJob()` / `getNextExecutionTime()`
+  - `start()` / `stop()` / `addJob(cronExpression, name, handler)` / `removeJob()` / `getNextExecutionTime()`
 - `LeaderScheduler`
-  - `start()` / `stop()` / `addJob()` / `removeJob()`
+  - `start()` / `stop()` / `addJob(cronExpression, name, handler)` / `removeJob()`
 - `Cron`
   - `matches(date)` / `getNextExecution(after?)`
 - `RunStore`

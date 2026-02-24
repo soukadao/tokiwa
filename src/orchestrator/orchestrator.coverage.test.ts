@@ -17,7 +17,7 @@ import {
 } from "./orchestrator.js";
 
 const CRON_EXPRESSION = "* * * * *";
-const JOB_ID = "job";
+const JOB_NAME = "cron-job";
 const EVENT_TYPE = "event.alpha";
 const EVENT_TYPE_B = "event.beta";
 const REGEX_EVENT = "event.regex";
@@ -30,7 +30,9 @@ const SAVE_ERROR_MESSAGE = "save failed";
 class FakeScheduler implements CronScheduler {
   start(): void {}
   stop(): void {}
-  addJob(_id: string, _cron: string, _handler: CronJobHandler): void {}
+  addJob(_cron: string, _name: string, _handler: CronJobHandler): string {
+    return "job";
+  }
   removeJob(_id: string): boolean {
     return false;
   }
@@ -76,7 +78,7 @@ test("cron APIs throw without scheduler", () => {
   const orchestrator = new Orchestrator();
 
   expect(() =>
-    orchestrator.registerCronJob(JOB_ID, CRON_EXPRESSION, () => {}),
+    orchestrator.registerCronJob(CRON_EXPRESSION, JOB_NAME, () => {}),
   ).toThrow(StateError);
 });
 
@@ -108,7 +110,7 @@ test("registerCronWorkflow rejects chatflow", () => {
   orchestrator.registerWorkflow(chatflow);
 
   expect(() =>
-    orchestrator.registerCronWorkflow(JOB_ID, CRON_EXPRESSION, chatflow.id),
+    orchestrator.registerCronWorkflow(CRON_EXPRESSION, chatflow.id, JOB_NAME),
   ).toThrow(InvalidArgumentError);
 });
 

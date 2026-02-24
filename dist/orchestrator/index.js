@@ -1141,49 +1141,44 @@ var Orchestrator = class {
   /**
    * スケジューラーを通じてcronジョブを登録する。
    *
-   * @param jobId - ジョブの一意識別子
    * @param cronExpression - cron式（例: "0 * * * *"）
+   * @param name - ジョブの表示名
    * @param handler - 実行するハンドラー関数
-   * @param name - ジョブの表示名（任意）
+   * @returns 生成されたジョブID
    * @throws {StateError} スケジューラーが設定されていない場合
    */
-  registerCronJob(jobId, cronExpression, handler, name) {
-    this.getScheduler().addJob(jobId, cronExpression, handler, name);
+  registerCronJob(cronExpression, name, handler) {
+    return this.getScheduler().addJob(cronExpression, name, handler);
   }
   /**
    * スケジュールに従ってイベントをパブリッシュするcronジョブを登録する。
    *
-   * @param jobId - ジョブの一意識別子
    * @param cronExpression - cron式
    * @param eventType - パブリッシュするイベントタイプ
+   * @param name - ジョブの表示名
    * @param payload - イベントのペイロード（任意）
    * @param metadata - イベントのメタデータ（任意）
-   * @param name - ジョブの表示名（任意）
+   * @returns 生成されたジョブID
    */
-  registerCronEvent(jobId, cronExpression, eventType, payload, metadata, name) {
-    this.registerCronJob(
-      jobId,
-      cronExpression,
-      () => {
-        this.publish(eventType, payload, metadata);
-      },
-      name
-    );
+  registerCronEvent(cronExpression, eventType, name, payload, metadata) {
+    return this.registerCronJob(cronExpression, name, () => {
+      this.publish(eventType, payload, metadata);
+    });
   }
   /**
    * スケジュールに従ってワークフローを実行するcronジョブを登録する。
    *
    * チャットフローワークフローはcronスケジューリングに対応していない。
    *
-   * @param jobId - ジョブの一意識別子
    * @param cronExpression - cron式
    * @param workflowId - 実行するワークフローのID
+   * @param name - ジョブの表示名
    * @param options - ワークフロー実行時のオプション（任意）
-   * @param name - ジョブの表示名（任意）
+   * @returns 生成されたジョブID
    * @throws {NotFoundError} 指定されたワークフローが見つからない場合
    * @throws {InvalidArgumentError} チャットフローワークフローが指定された場合
    */
-  registerCronWorkflow(jobId, cronExpression, workflowId, options, name) {
+  registerCronWorkflow(cronExpression, workflowId, name, options) {
     const registration = this.workflows.get(workflowId);
     if (!registration) {
       throw new NotFoundError(`Unknown workflow: ${workflowId}`);
@@ -1191,14 +1186,9 @@ var Orchestrator = class {
     if (registration.workflow.type === "chatflow") {
       throw new InvalidArgumentError(CHATFLOW_CRON_UNSUPPORTED);
     }
-    this.registerCronJob(
-      jobId,
-      cronExpression,
-      async () => {
-        await this.runWorkflow(workflowId, options);
-      },
-      name
-    );
+    return this.registerCronJob(cronExpression, name, async () => {
+      await this.runWorkflow(workflowId, options);
+    });
   }
   /**
    * 登録済みのcronジョブを削除する。

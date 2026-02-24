@@ -4,10 +4,14 @@ import type { CronScheduler } from "../orchestrator/orchestrator.js";
 import { LeaderScheduler } from "./leader-scheduler.js";
 
 const LOCK_KEY = "tokiwa:locks:cron";
+const JOB_COUNTER_START = 0;
+const JOB_COUNTER_INCREMENT = 1;
+const JOB_ID_PREFIX = "job-";
 
 class FakeScheduler implements CronScheduler {
   startCalls = 0;
   stopCalls = 0;
+  private nextId = JOB_COUNTER_START;
 
   start(): void {
     this.startCalls += 1;
@@ -17,7 +21,14 @@ class FakeScheduler implements CronScheduler {
     this.stopCalls += 1;
   }
 
-  addJob(): void {}
+  addJob(
+    _cron: string,
+    _name: string,
+    _handler: () => void | Promise<void>,
+  ): string {
+    this.nextId += JOB_COUNTER_INCREMENT;
+    return `${JOB_ID_PREFIX}${this.nextId}`;
+  }
 
   removeJob(): boolean {
     return false;

@@ -52,12 +52,7 @@ export type CronJobHandler = () => void | Promise<void>;
 export interface CronScheduler {
   start(): void | Promise<void>;
   stop(): void | Promise<void>;
-  addJob(
-    id: string,
-    cronExpression: string,
-    handler: CronJobHandler,
-    name?: string,
-  ): void;
+  addJob(cronExpression: string, name: string, handler: CronJobHandler): string;
   removeJob(id: string): boolean;
   isJobScheduled(id: string): boolean;
 }
@@ -324,47 +319,40 @@ export class Orchestrator {
   /**
    * スケジューラーを通じてcronジョブを登録する。
    *
-   * @param jobId - ジョブの一意識別子
    * @param cronExpression - cron式（例: "0 * * * *"）
+   * @param name - ジョブの表示名
    * @param handler - 実行するハンドラー関数
-   * @param name - ジョブの表示名（任意）
+   * @returns 生成されたジョブID
    * @throws {StateError} スケジューラーが設定されていない場合
    */
   registerCronJob(
-    jobId: string,
     cronExpression: string,
+    name: string,
     handler: CronJobHandler,
-    name?: string,
-  ): void {
-    this.getScheduler().addJob(jobId, cronExpression, handler, name);
+  ): string {
+    return this.getScheduler().addJob(cronExpression, name, handler);
   }
 
   /**
    * スケジュールに従ってイベントをパブリッシュするcronジョブを登録する。
    *
-   * @param jobId - ジョブの一意識別子
    * @param cronExpression - cron式
    * @param eventType - パブリッシュするイベントタイプ
+   * @param name - ジョブの表示名
    * @param payload - イベントのペイロード（任意）
    * @param metadata - イベントのメタデータ（任意）
-   * @param name - ジョブの表示名（任意）
+   * @returns 生成されたジョブID
    */
   registerCronEvent<TPayload = unknown>(
-    jobId: string,
     cronExpression: string,
     eventType: string,
+    name: string,
     payload?: TPayload,
     metadata?: EventMetadata,
-    name?: string,
-  ): void {
-    this.registerCronJob(
-      jobId,
-      cronExpression,
-      () => {
-        this.publish(eventType, payload, metadata);
-      },
-      name,
-    );
+  ): string {
+    return this.registerCronJob(cronExpression, name, () => {
+      this.publish(eventType, payload, metadata);
+    });
   }
 
   /**
@@ -372,21 +360,20 @@ export class Orchestrator {
    *
    * チャットフローワークフローはcronスケジューリングに対応していない。
    *
-   * @param jobId - ジョブの一意識別子
    * @param cronExpression - cron式
    * @param workflowId - 実行するワークフローのID
+   * @param name - ジョブの表示名
    * @param options - ワークフロー実行時のオプション（任意）
-   * @param name - ジョブの表示名（任意）
+   * @returns 生成されたジョブID
    * @throws {NotFoundError} 指定されたワークフローが見つからない場合
    * @throws {InvalidArgumentError} チャットフローワークフローが指定された場合
    */
   registerCronWorkflow<Context = unknown, Input = unknown>(
-    jobId: string,
     cronExpression: string,
     workflowId: string,
+    name: string,
     options?: WorkflowRunOptions<Context, Input>,
-    name?: string,
-  ): void {
+  ): string {
     const registration = this.workflows.get(workflowId);
     if (!registration) {
       throw new NotFoundError(`Unknown workflow: ${workflowId}`);
@@ -395,14 +382,9 @@ export class Orchestrator {
       throw new InvalidArgumentError(CHATFLOW_CRON_UNSUPPORTED);
     }
 
-    this.registerCronJob(
-      jobId,
-      cronExpression,
-      async () => {
-        await this.runWorkflow<Context, Input>(workflowId, options);
-      },
-      name,
-    );
+    return this.registerCronJob(cronExpression, name, async () => {
+      await this.runWorkflow<Context, Input>(workflowId, options);
+    });
   }
 
   /**

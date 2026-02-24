@@ -12,7 +12,7 @@ export type CronJobHandler = () => void | Promise<void>;
 export interface CronScheduler {
     start(): void | Promise<void>;
     stop(): void | Promise<void>;
-    addJob(id: string, cronExpression: string, handler: CronJobHandler, name?: string): void;
+    addJob(cronExpression: string, name: string, handler: CronJobHandler): string;
     removeJob(id: string): boolean;
     isJobScheduled(id: string): boolean;
 }
@@ -136,38 +136,38 @@ export declare class Orchestrator {
     /**
      * スケジューラーを通じてcronジョブを登録する。
      *
-     * @param jobId - ジョブの一意識別子
      * @param cronExpression - cron式（例: "0 * * * *"）
+     * @param name - ジョブの表示名
      * @param handler - 実行するハンドラー関数
-     * @param name - ジョブの表示名（任意）
+     * @returns 生成されたジョブID
      * @throws {StateError} スケジューラーが設定されていない場合
      */
-    registerCronJob(jobId: string, cronExpression: string, handler: CronJobHandler, name?: string): void;
+    registerCronJob(cronExpression: string, name: string, handler: CronJobHandler): string;
     /**
      * スケジュールに従ってイベントをパブリッシュするcronジョブを登録する。
      *
-     * @param jobId - ジョブの一意識別子
      * @param cronExpression - cron式
      * @param eventType - パブリッシュするイベントタイプ
+     * @param name - ジョブの表示名
      * @param payload - イベントのペイロード（任意）
      * @param metadata - イベントのメタデータ（任意）
-     * @param name - ジョブの表示名（任意）
+     * @returns 生成されたジョブID
      */
-    registerCronEvent<TPayload = unknown>(jobId: string, cronExpression: string, eventType: string, payload?: TPayload, metadata?: EventMetadata, name?: string): void;
+    registerCronEvent<TPayload = unknown>(cronExpression: string, eventType: string, name: string, payload?: TPayload, metadata?: EventMetadata): string;
     /**
      * スケジュールに従ってワークフローを実行するcronジョブを登録する。
      *
      * チャットフローワークフローはcronスケジューリングに対応していない。
      *
-     * @param jobId - ジョブの一意識別子
      * @param cronExpression - cron式
      * @param workflowId - 実行するワークフローのID
+     * @param name - ジョブの表示名
      * @param options - ワークフロー実行時のオプション（任意）
-     * @param name - ジョブの表示名（任意）
+     * @returns 生成されたジョブID
      * @throws {NotFoundError} 指定されたワークフローが見つからない場合
      * @throws {InvalidArgumentError} チャットフローワークフローが指定された場合
      */
-    registerCronWorkflow<Context = unknown, Input = unknown>(jobId: string, cronExpression: string, workflowId: string, options?: WorkflowRunOptions<Context, Input>, name?: string): void;
+    registerCronWorkflow<Context = unknown, Input = unknown>(cronExpression: string, workflowId: string, name: string, options?: WorkflowRunOptions<Context, Input>): string;
     /**
      * 登録済みのcronジョブを削除する。
      *

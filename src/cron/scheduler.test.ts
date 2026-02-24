@@ -7,8 +7,8 @@ const ONE_MINUTE_MS = 60_000;
 const SHORT_DELAY_MS = 10;
 const PARALLEL_WAIT_MS = 20;
 const NUMERIC_INTERVAL_MS = 5_000;
-const JOB_ID = "jobA";
-const JOB_ID_B = "jobB";
+const JOB_NAME = "jobA";
+const JOB_NAME_B = "jobB";
 const RUNS_ONCE = 1;
 const NO_RUNS = 0;
 const ZERO = 0;
@@ -24,22 +24,22 @@ afterEach(() => {
 
 test("addJob stores a job and getters reflect it", () => {
   const scheduler = new Scheduler();
-  scheduler.addJob(JOB_ID, "* * * * *", () => {});
+  const jobId = scheduler.addJob("* * * * *", JOB_NAME, () => {});
 
-  const job = scheduler.getJob(JOB_ID);
-  expect(job?.id).toBe(JOB_ID);
-  expect(job?.name).toBeUndefined();
+  const job = scheduler.getJob(jobId);
+  expect(job?.id).toBe(jobId);
+  expect(job?.name).toBe(JOB_NAME);
   expect(scheduler.getAllJobs()).toHaveLength(RUNS_ONCE);
-  expect(scheduler.isJobScheduled(JOB_ID)).toBe(true);
+  expect(scheduler.isJobScheduled(jobId)).toBe(true);
 });
 
 test("removeJob deletes a job and returns status", () => {
   const scheduler = new Scheduler();
-  scheduler.addJob(JOB_ID, "* * * * *", () => {});
+  const jobId = scheduler.addJob("* * * * *", JOB_NAME, () => {});
 
-  expect(scheduler.removeJob(JOB_ID)).toBe(true);
-  expect(scheduler.removeJob(JOB_ID)).toBe(false);
-  expect(scheduler.isJobScheduled(JOB_ID)).toBe(false);
+  expect(scheduler.removeJob(jobId)).toBe(true);
+  expect(scheduler.removeJob(jobId)).toBe(false);
+  expect(scheduler.isJobScheduled(jobId)).toBe(false);
 });
 
 test("getNextExecutionTime returns null for missing job", () => {
@@ -51,9 +51,9 @@ test("getNextExecutionTime returns null for missing job", () => {
 test("getNextExecutionTime returns the next execution", () => {
   vi.setSystemTime(new Date(2024, 0, 1, 0, 2, 30));
   const scheduler = new Scheduler();
-  scheduler.addJob(JOB_ID, "*/5 * * * *", () => {});
+  const jobId = scheduler.addJob("*/5 * * * *", JOB_NAME, () => {});
 
-  const next = scheduler.getNextExecutionTime(JOB_ID);
+  const next = scheduler.getNextExecutionTime(jobId);
 
   expect(next).not.toBeNull();
   expect(next?.getMinutes()).toBe(5);
@@ -65,7 +65,7 @@ test("start executes a matching job on the next minute", async () => {
   const scheduler = new Scheduler();
   let runs = 0;
 
-  scheduler.addJob(JOB_ID, "* * * * *", () => {
+  scheduler.addJob("* * * * *", JOB_NAME, () => {
     runs += 1;
   });
 
@@ -114,7 +114,7 @@ test("handler errors are logged", async () => {
   };
   const scheduler = new Scheduler({ logger });
 
-  scheduler.addJob("jobA", "* * * * *", () => {
+  scheduler.addJob("* * * * *", JOB_NAME, () => {
     throw new RuntimeError("boom");
   });
 
@@ -130,7 +130,7 @@ test("stop cancels the pending check", async () => {
   const scheduler = new Scheduler();
   let runs = 0;
 
-  scheduler.addJob(JOB_ID, "* * * * *", () => {
+  scheduler.addJob("* * * * *", JOB_NAME, () => {
     runs += 1;
   });
 
@@ -147,14 +147,14 @@ test("jobs run in parallel within the same tick", async () => {
   let running = 0;
   let maxRunning = 0;
 
-  scheduler.addJob(JOB_ID, "* * * * *", async () => {
+  scheduler.addJob("* * * * *", JOB_NAME, async () => {
     running += 1;
     maxRunning = Math.max(maxRunning, running);
     await new Promise((resolve) => setTimeout(resolve, SHORT_DELAY_MS));
     running -= 1;
   });
 
-  scheduler.addJob(JOB_ID_B, "* * * * *", async () => {
+  scheduler.addJob("* * * * *", JOB_NAME_B, async () => {
     running += 1;
     maxRunning = Math.max(maxRunning, running);
     await new Promise((resolve) => setTimeout(resolve, SHORT_DELAY_MS));
@@ -180,7 +180,7 @@ test("checkAndExecuteJobs skips non-matching jobs", async () => {
   const scheduler = new Scheduler({ checkIntervalMs: ONE_MINUTE_MS });
   let runs = 0;
 
-  scheduler.addJob(JOB_ID, "0 0 1 1 *", () => {
+  scheduler.addJob("0 0 1 1 *", JOB_NAME, () => {
     runs += 1;
   });
 
@@ -197,7 +197,7 @@ test("checkAndExecuteJobs avoids duplicate runs within a minute", async () => {
   const scheduler = new Scheduler({ checkIntervalMs: ONE_MINUTE_MS });
   let runs = 0;
 
-  scheduler.addJob(JOB_ID, "* * * * *", () => {
+  scheduler.addJob("* * * * *", JOB_NAME, () => {
     runs += 1;
   });
 
@@ -218,7 +218,7 @@ test("stop waits for in-flight jobs", async () => {
     resolveJob = resolve;
   });
 
-  scheduler.addJob(JOB_ID, "* * * * *", async () => {
+  scheduler.addJob("* * * * *", JOB_NAME, async () => {
     await gate;
   });
 

@@ -1,3 +1,4 @@
+import { generateId } from "../core/index.js";
 import { Logger } from "../core/logger.js";
 import { Cron } from "./cron.js";
 
@@ -7,7 +8,7 @@ interface Job {
   id: string;
   cron: Cron;
   handler: JobHandler;
-  name?: string;
+  name: string;
 }
 
 const MILLISECONDS_PER_SECOND = 1_000;
@@ -61,18 +62,23 @@ export class Scheduler {
   }
 
   /**
-   * Adds or replaces a job by id.
+   * Adds a job with a generated id.
+   * @param cronExpression cron式文字列
+   * @param name ジョブの表示名
+   * @param handler ジョブ実行時に呼び出されるハンドラー
+   * @returns 生成されたジョブID
    */
   public addJob(
-    id: string,
     cronExpression: string,
+    name: string,
     handler: JobHandler,
-    name?: string,
-  ): void {
+  ): string {
     const cron = new Cron(cronExpression);
+    const id = this.generateJobId();
     const job: Job = { id, cron, handler, name };
     this.jobs.set(id, job);
     this.lastRunKeyByJob.delete(id);
+    return id;
   }
 
   /**
@@ -264,5 +270,17 @@ export class Scheduler {
    */
   public isJobScheduled(jobId: string): boolean {
     return this.jobs.has(jobId);
+  }
+
+  /**
+   * 既存ジョブと重複しないIDを生成する。
+   * @returns ジョブID
+   */
+  private generateJobId(): string {
+    let id = generateId();
+    while (this.jobs.has(id)) {
+      id = generateId();
+    }
+    return id;
   }
 }

@@ -14,6 +14,12 @@ var InvalidArgumentError = class extends AppError {
 var RuntimeError = class extends AppError {
 };
 
+// src/core/generate-id.ts
+import { randomUUID } from "node:crypto";
+function generateId() {
+  return randomUUID();
+}
+
 // src/core/logger.ts
 var LOG_LEVEL = {
   emergency: 0,
@@ -544,13 +550,13 @@ var LeaderScheduler = class {
   }
   /**
    * 内部スケジューラーにジョブを追加する。
-   * @param id ジョブの一意識別子
    * @param cronExpression cron式文字列
+   * @param name ジョブの表示名
    * @param handler ジョブ実行時に呼び出されるハンドラー
-   * @param name ジョブの表示名（省略可）
+   * @returns 生成されたジョブID
    */
-  addJob(id, cronExpression, handler, name) {
-    this.scheduler.addJob(id, cronExpression, handler, name);
+  addJob(cronExpression, name, handler) {
+    return this.scheduler.addJob(cronExpression, name, handler);
   }
   /**
    * 内部スケジューラーからジョブを削除する。
@@ -711,13 +717,19 @@ var Scheduler = class _Scheduler {
     );
   }
   /**
-   * Adds or replaces a job by id.
+   * Adds a job with a generated id.
+   * @param cronExpression cron式文字列
+   * @param name ジョブの表示名
+   * @param handler ジョブ実行時に呼び出されるハンドラー
+   * @returns 生成されたジョブID
    */
-  addJob(id, cronExpression, handler, name) {
+  addJob(cronExpression, name, handler) {
     const cron = new Cron(cronExpression);
+    const id = this.generateJobId();
     const job = { id, cron, handler, name };
     this.jobs.set(id, job);
     this.lastRunKeyByJob.delete(id);
+    return id;
   }
   /**
    * Removes a job by id.
@@ -881,6 +893,17 @@ var Scheduler = class _Scheduler {
    */
   isJobScheduled(jobId) {
     return this.jobs.has(jobId);
+  }
+  /**
+   * 既存ジョブと重複しないIDを生成する。
+   * @returns ジョブID
+   */
+  generateJobId() {
+    let id = generateId();
+    while (this.jobs.has(id)) {
+      id = generateId();
+    }
+    return id;
   }
 };
 export {
