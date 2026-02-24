@@ -1,0 +1,12 @@
+{
+  "compilerOptions": {
+    "strict": true,
+    "target": "esnext",
+    "module": "nodenext",
+    "types": ["node"],
+    "moduleResolution": "nodenext",
+    "resolveJsonModule": true,
+    "useUnknownInCatchVariables": true
+  },
+  "include": ["src"]
+}
