@@ -7,9 +7,20 @@ export interface MemoryDiff {
 
 const EMPTY_DIFF: MemoryDiff = { set: {}, remove: [] };
 
+/**
+ * 差分が空かどうかを判定する
+ * @param diff メモリ差分
+ * @returns 変更がなければtrue
+ */
 export const isEmptyDiff = (diff: MemoryDiff): boolean =>
   Object.keys(diff.set).length === 0 && diff.remove.length === 0;
 
+/**
+ * 2つのメモリ状態の差分を計算する
+ * @param previous 変更前のメモリ
+ * @param next 変更後のメモリ
+ * @returns 設定された値と削除されたキーの差分
+ */
 export const diffMemory = (
   previous: ConversationMemory,
   next: ConversationMemory,
@@ -45,6 +56,12 @@ export const diffMemory = (
   return { set, remove };
 };
 
+/**
+ * メモリ差分をベースのメモリに適用する
+ * @param base ベースとなるメモリ
+ * @param diff 適用する差分
+ * @returns 差分適用後の新しいメモリ
+ */
 export const applyMemoryDiff = (
   base: ConversationMemory,
   diff: MemoryDiff,

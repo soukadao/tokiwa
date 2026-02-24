@@ -10,7 +10,6 @@ import {
 const CRON_EXPRESSION = "* * * * *";
 const CRON_JOB_ID = "cron-job";
 const EVENT_TYPE = "system.tick";
-const WORKFLOW_ID = "cron-workflow";
 
 class FakeScheduler implements CronScheduler {
   public start = vi.fn();
@@ -70,10 +69,8 @@ test("registerCronWorkflow runs a workflow", async () => {
   let runs = 0;
 
   const workflow = new Workflow({
-    id: WORKFLOW_ID,
     nodes: [
       new Node({
-        id: "task",
         handler: () => {
           runs += 1;
         },
@@ -82,7 +79,7 @@ test("registerCronWorkflow runs a workflow", async () => {
   });
 
   orchestrator.registerWorkflow(workflow);
-  orchestrator.registerCronWorkflow(CRON_JOB_ID, CRON_EXPRESSION, WORKFLOW_ID);
+  orchestrator.registerCronWorkflow(CRON_JOB_ID, CRON_EXPRESSION, workflow.id);
 
   await scheduler.run(CRON_JOB_ID);
 

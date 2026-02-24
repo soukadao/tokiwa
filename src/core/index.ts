@@ -13,4 +13,9 @@ export {
 } from "./errors.js";
 export { FileSystem } from "./file-system.js";
 export { generateId } from "./generate-id.js";
+export type {
+  DistributedLock,
+  LockAcquireOptions,
+  LockHandle,
+} from "./lock.js";
 export { createLogger, LOG_LEVEL, Logger, type LogLevel } from "./logger.js";

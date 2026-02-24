@@ -151,6 +151,15 @@ const serializeTimelineEntry = (
   }
 };
 
+/**
+ * WorkflowRunResult を永続化用の WorkflowRunRecord に変換する。
+ *
+ * Date オブジェクトを ISO 文字列に、Error オブジェクトを ErrorInfo に変換し、
+ * シリアライズ可能なレコードを返す。
+ *
+ * @param result - ワークフロー実行結果
+ * @returns 永続化用に変換されたワークフロー実行レコード
+ */
 export const toRunRecord = (result: WorkflowRunResult): WorkflowRunRecord => {
   const errors: Record<string, ErrorInfo> = {};
   for (const [nodeId, error] of Object.entries(result.errors)) {
@@ -172,17 +181,44 @@ export const toRunRecord = (result: WorkflowRunResult): WorkflowRunRecord => {
   };
 };
 
+/**
+ * RunStore のインメモリ実装。
+ *
+ * 内部で Map を使用してレコードを保持する。
+ * テストや短期間の実行など、永続化が不要な場合に適している。
+ */
 export class InMemoryRunStore implements RunStore {
   private readonly store = new Map<string, WorkflowRunRecord>();
 
+  /**
+   * レコードをインメモリストアに保存する。
+   *
+   * 同じ runId のレコードが既に存在する場合は上書きされる。
+   *
+   * @param record - 保存するワークフロー実行レコード
+   */
   async save(record: WorkflowRunRecord): Promise<void> {
     this.store.set(record.runId, record);
   }
 
+  /**
+   * 指定された runId に対応するレコードを取得する。
+   *
+   * @param runId - 取得対象の実行ID
+   * @returns 該当するレコード。存在しない場合は undefined
+   */
   async get(runId: string): Promise<WorkflowRunRecord | undefined> {
     return this.store.get(runId);
   }
 
+  /**
+   * 保存されているレコードの一覧を返す。
+   *
+   * workflowId によるフィルタリングや、limit による件数制限が可能。
+   *
+   * @param options - フィルタリングおよび件数制限のオプション
+   * @returns 条件に一致するレコードの配列
+   */
   async list(options: RunStoreListOptions = {}): Promise<WorkflowRunRecord[]> {
     const records = Array.from(this.store.values());
     const filtered = options.workflowId
@@ -203,6 +239,12 @@ export interface FileRunStoreOptions {
 const DEFAULT_RUNS_DIRECTORY = "runs";
 const RUN_FILE_EXTENSION = ".json";
 
+/**
+ * RunStore のファイルベース実装。
+ *
+ * 各レコードを JSON ファイルとしてディレクトリに保存する。
+ * 永続化が必要な本番環境での使用に適している。
+ */
 export class FileRunStore implements RunStore {
   private readonly directory: string;
   private readonly fs: FileSystem;
@@ -212,11 +254,26 @@ export class FileRunStore implements RunStore {
     this.fs = options.fileSystem ?? new DefaultFileSystem();
   }
 
+  /**
+   * レコードを JSON ファイルとして保存する。
+   *
+   * ファイル名は runId に基づいて自動生成される。
+   *
+   * @param record - 保存するワークフロー実行レコード
+   */
   async save(record: WorkflowRunRecord): Promise<void> {
     const path = this.pathFor(record.runId);
     await this.fs.writeJson(path, record);
   }
 
+  /**
+   * 指定された runId に対応するレコードを JSON ファイルから読み込む。
+   *
+   * ファイルが存在しない場合は undefined を返す。
+   *
+   * @param runId - 取得対象の実行ID
+   * @returns 該当するレコード。ファイルが存在しない場合は undefined
+   */
   async get(runId: string): Promise<WorkflowRunRecord | undefined> {
     const path = this.pathFor(runId);
     if (!(await this.fs.exists(path))) {
@@ -225,6 +282,15 @@ export class FileRunStore implements RunStore {
     return this.fs.readJson<WorkflowRunRecord>(path);
   }
 
+  /**
+   * ディレクトリ内の JSON ファイルからレコードの一覧を読み込む。
+   *
+   * workflowId によるフィルタリングや、limit による件数制限が可能。
+   * ディレクトリが存在しない場合は空配列を返す。
+   *
+   * @param options - フィルタリングおよび件数制限のオプション
+   * @returns 条件に一致するレコードの配列
+   */
   async list(options: RunStoreListOptions = {}): Promise<WorkflowRunRecord[]> {
     if (!(await this.fs.exists(this.directory))) {
       return [];
@@ -253,10 +319,22 @@ export class FileRunStore implements RunStore {
     return records;
   }
 
+  /**
+   * 指定された runId に対応するファイルパスを生成する。
+   *
+   * @param runId - 実行ID
+   * @returns JSON ファイルのフルパス
+   */
   private pathFor(runId: string): string {
     return this.joinPath(`${runId}${RUN_FILE_EXTENSION}`);
   }
 
+  /**
+   * ディレクトリとファイル名を結合してパスを生成する。
+   *
+   * @param fileName - ファイル名
+   * @returns 結合されたファイルパス
+   */
   private joinPath(fileName: string): string {
     return `${this.directory}/${fileName}`;
   }

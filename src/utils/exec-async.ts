@@ -52,6 +52,13 @@ export const execAsync = async (
   return { stdout: normalizeOutput(stdout), stderr: normalizeOutput(stderr) };
 };
 
+/**
+ * シェルを介さずにファイルを直接実行する
+ * @param file 実行するファイルパス
+ * @param args コマンドライン引数
+ * @param options 実行オプション
+ * @returns 標準出力と標準エラー出力
+ */
 export const execFileAsync = async (
   file: string,
   args: readonly string[] = [],

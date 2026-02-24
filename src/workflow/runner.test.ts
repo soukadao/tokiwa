@@ -5,59 +5,53 @@ import { Node, Runner, Workflow } from "./index.js";
 const RETRY_MAX_ATTEMPTS = 3;
 const RETRY_INITIAL_DELAY_MS = 0;
 const RETRY_BACKOFF_MULTIPLIER = 1;
-const RETRY_WORKFLOW_ID = "retry";
-const CHATFLOW_WORKFLOW_ID = "chatflow";
 const CONVERSATION_ID = "conv-1";
 const MEMORY_KEY = "count";
 const INITIAL_COUNT = 0;
 const UPDATED_COUNT = 1;
 const ZERO = 0;
 const ONE = 1;
-const HOOK_WORKFLOW_ID = "hooks";
-const HOOK_NODE_ID = "hook-node";
 const HOOK_INPUT = 7;
 const HOOK_RESULT = { ok: true };
-const RETRY_NODE_ID = "retry-node";
 const RETRY_DELAY_MS = 1;
 const RETRY_ATTEMPTS = 2;
 const RETRY_JITTER_MS = 0;
-const ERROR_NODE_ID = "error-node";
 const ERROR_ATTEMPTS = 1;
-const MEMORY_WORKFLOW_ID = "memory-flow";
-const MEMORY_NODE_ID = "memory-node";
 const MEMORY_KEY_A = "a";
 const MEMORY_KEY_B = "b";
 const MEMORY_KEY_C = "c";
 const MEMORY_VALUE_A = 1;
 const MEMORY_VALUE_B = 2;
 const MEMORY_VALUE_C = 3;
+const DEEP_MEMORY_KEY = "nested";
+const DEEP_MEMORY_SUBKEY = "count";
+const DEEP_MEMORY_VALUE_ONE = 1;
+const DEEP_MEMORY_VALUE_TWO = 2;
+const FAILFAST_TIMEOUT_MS = 50;
+const FAILFAST_CONCURRENCY = 2;
+const MISSING_DEPENDENCY_ID = "missing";
 
 test("runner executes dependencies before dependents", async () => {
   const order: string[] = [];
+  const nodeA = new Node({
+    handler: () => {
+      order.push("A");
+    },
+  });
+  const nodeB = new Node({
+    dependsOn: [nodeA.id],
+    handler: () => {
+      order.push("B");
+    },
+  });
+  const nodeC = new Node({
+    dependsOn: [nodeA.id],
+    handler: () => {
+      order.push("C");
+    },
+  });
   const workflow = new Workflow({
-    id: "order",
-    nodes: [
-      new Node({
-        id: "A",
-        handler: () => {
-          order.push("A");
-        },
-      }),
-      new Node({
-        id: "B",
-        dependsOn: ["A"],
-        handler: () => {
-          order.push("B");
-        },
-      }),
-      new Node({
-        id: "C",
-        dependsOn: ["A"],
-        handler: () => {
-          order.push("C");
-        },
-      }),
-    ],
+    nodes: [nodeA, nodeB, nodeC],
   });
 
   const runner = new Runner();
@@ -73,17 +67,15 @@ test("runner executes dependencies before dependents", async () => {
 });
 
 test("runner reports failures without double-recording", async () => {
+  const failingNode = new Node({
+    handler: () => {
+      throw new RuntimeError("boom");
+    },
+  });
   const workflow = new Workflow({
-    id: "failures",
     nodes: [
+      failingNode,
       new Node({
-        id: "A",
-        handler: () => {
-          throw new RuntimeError("boom");
-        },
-      }),
-      new Node({
-        id: "B",
         handler: () => {},
       }),
     ],
@@ -96,43 +88,81 @@ test("runner reports failures without double-recording", async () => {
   });
 
   expect(result.status).toBe("failed");
-  expect(result.errors.A).toBeInstanceOf(Error);
+  expect(result.errors[failingNode.id]).toBeInstanceOf(Error);
 });
 
-test("runner throws on missing dependency", async () => {
+test("failFast aborts in-flight nodes via signal", async () => {
+  let aborted = false;
+  let timedOut = false;
   const workflow = new Workflow({
-    id: "missing",
     nodes: [
       new Node({
-        id: "A",
-        dependsOn: ["missing"],
-        handler: () => {},
+        handler: async () => {
+          await Promise.resolve();
+          throw new RuntimeError("boom");
+        },
+      }),
+      new Node({
+        handler: ({ signal }) =>
+          new Promise((resolve) => {
+            if (!signal) {
+              timedOut = true;
+              resolve("no-signal");
+              return;
+            }
+            const timeoutId = setTimeout(() => {
+              timedOut = true;
+              resolve("timeout");
+            }, FAILFAST_TIMEOUT_MS);
+            const onAbort = (): void => {
+              aborted = true;
+              clearTimeout(timeoutId);
+              resolve("aborted");
+            };
+            if (signal.aborted) {
+              onAbort();
+              return;
+            }
+            signal.addEventListener("abort", onAbort, { once: true });
+          }),
       }),
     ],
   });
 
   const runner = new Runner();
+  const result = await runner.run(workflow, {
+    failFast: true,
+    concurrency: FAILFAST_CONCURRENCY,
+  });
+
+  expect(result.status).toBe("failed");
+  expect(aborted).toBe(true);
+  expect(timedOut).toBe(false);
+});
+
+test("runner throws on missing dependency", async () => {
+  const node = new Node({
+    dependsOn: [MISSING_DEPENDENCY_ID],
+    handler: () => {},
+  });
+  const workflow = new Workflow({
+    nodes: [node],
+  });
+
+  const runner = new Runner();
 
   await expect(runner.run(workflow)).rejects.toThrow(
-    "Node A depends on missing node: missing",
+    `Node ${node.id} depends on missing node: ${MISSING_DEPENDENCY_ID}`,
   );
 });
 
 test("runner throws on cyclic dependency", async () => {
+  const nodeA = new Node({ handler: () => {} });
+  const nodeB = new Node({ handler: () => {} });
+  nodeA.addDependency(nodeB.id);
+  nodeB.addDependency(nodeA.id);
   const workflow = new Workflow({
-    id: "cycle",
-    nodes: [
-      new Node({
-        id: "A",
-        dependsOn: ["B"],
-        handler: () => {},
-      }),
-      new Node({
-        id: "B",
-        dependsOn: ["A"],
-        handler: () => {},
-      }),
-    ],
+    nodes: [nodeA, nodeB],
   });
 
   const runner = new Runner();
@@ -144,31 +174,28 @@ test("runner throws on cyclic dependency", async () => {
 
 test("runner retries nodes using retry policy", async () => {
   let attempt = 0;
+  const node = new Node({
+    retry: {
+      maxAttempts: RETRY_MAX_ATTEMPTS,
+      initialDelayMs: RETRY_INITIAL_DELAY_MS,
+      backoffMultiplier: RETRY_BACKOFF_MULTIPLIER,
+    },
+    handler: () => {
+      attempt += 1;
+      if (attempt < RETRY_MAX_ATTEMPTS) {
+        throw new RuntimeError("retry");
+      }
+    },
+  });
   const workflow = new Workflow({
-    id: RETRY_WORKFLOW_ID,
-    nodes: [
-      new Node({
-        id: "A",
-        retry: {
-          maxAttempts: RETRY_MAX_ATTEMPTS,
-          initialDelayMs: RETRY_INITIAL_DELAY_MS,
-          backoffMultiplier: RETRY_BACKOFF_MULTIPLIER,
-        },
-        handler: () => {
-          attempt += 1;
-          if (attempt < RETRY_MAX_ATTEMPTS) {
-            throw new RuntimeError("retry");
-          }
-        },
-      }),
-    ],
+    nodes: [node],
   });
 
   const runner = new Runner();
   const result = await runner.run(workflow);
 
   expect(attempt).toBe(RETRY_MAX_ATTEMPTS);
-  expect(result.attempts.A).toBe(RETRY_MAX_ATTEMPTS);
+  expect(result.attempts[node.id]).toBe(RETRY_MAX_ATTEMPTS);
   expect(result.status).toBe("succeeded");
   expect(result.timeline.some((entry) => entry.type === "node_retry")).toBe(
     true,
@@ -176,27 +203,23 @@ test("runner retries nodes using retry policy", async () => {
 });
 
 test("chatflow exposes memory updates", async () => {
+  const writer = new Node({
+    handler: ({ updateMemory }) => {
+      updateMemory?.({ [MEMORY_KEY]: UPDATED_COUNT });
+    },
+  });
+  const reader = new Node({
+    dependsOn: [writer.id],
+    handler: ({ getMemory }) => {
+      const memory = getMemory?.();
+      if (!memory || memory[MEMORY_KEY] !== UPDATED_COUNT) {
+        throw new RuntimeError("memory mismatch");
+      }
+    },
+  });
   const workflow = new Workflow({
-    id: CHATFLOW_WORKFLOW_ID,
     type: "chatflow",
-    nodes: [
-      new Node({
-        id: "writer",
-        handler: ({ updateMemory }) => {
-          updateMemory?.({ [MEMORY_KEY]: UPDATED_COUNT });
-        },
-      }),
-      new Node({
-        id: "reader",
-        dependsOn: ["writer"],
-        handler: ({ getMemory }) => {
-          const memory = getMemory?.();
-          if (!memory || memory[MEMORY_KEY] !== UPDATED_COUNT) {
-            throw new RuntimeError("memory mismatch");
-          }
-        },
-      }),
-    ],
+    nodes: [writer, reader],
   });
 
   const runner = new Runner();
@@ -210,14 +233,11 @@ test("chatflow exposes memory updates", async () => {
 });
 
 test("runner invokes node lifecycle hooks", async () => {
+  const hookNode = new Node({
+    handler: ({ input }) => ({ ok: input === HOOK_INPUT }),
+  });
   const workflow = new Workflow({
-    id: HOOK_WORKFLOW_ID,
-    nodes: [
-      new Node({
-        id: HOOK_NODE_ID,
-        handler: ({ input }) => ({ ok: input === HOOK_INPUT }),
-      }),
-    ],
+    nodes: [hookNode],
   });
 
   const events: string[] = [];
@@ -234,7 +254,7 @@ test("runner invokes node lifecycle hooks", async () => {
     },
   });
 
-  expect(events).toEqual([`start:${HOOK_NODE_ID}`, `complete:${HOOK_NODE_ID}`]);
+  expect(events).toEqual([`start:${hookNode.id}`, `complete:${hookNode.id}`]);
   expect(captured).toEqual(HOOK_RESULT);
 });
 
@@ -243,10 +263,8 @@ test("runner calls onNodeRetry with delay", async () => {
   let retryCalled = ZERO;
   let lastDelay = ZERO;
   const workflow = new Workflow({
-    id: RETRY_WORKFLOW_ID,
     nodes: [
       new Node({
-        id: RETRY_NODE_ID,
         retry: {
           maxAttempts: RETRY_ATTEMPTS,
           initialDelayMs: RETRY_DELAY_MS,
@@ -279,10 +297,8 @@ test("runner calls onNodeRetry with delay", async () => {
 test("runner calls onNodeError after retries exhausted", async () => {
   let errorCalled = ZERO;
   const workflow = new Workflow({
-    id: "error-flow",
     nodes: [
       new Node({
-        id: ERROR_NODE_ID,
         retry: { maxAttempts: ERROR_ATTEMPTS },
         handler: () => {
           throw new RuntimeError("always fails");
@@ -304,10 +320,8 @@ test("runner calls onNodeError after retries exhausted", async () => {
 
 test("runner allows setMemory/updateMemory outside chatflow", async () => {
   const workflow = new Workflow({
-    id: MEMORY_WORKFLOW_ID,
     nodes: [
       new Node({
-        id: MEMORY_NODE_ID,
         handler: ({ setMemory, updateMemory, getMemory }) => {
           setMemory?.({ [MEMORY_KEY_A]: MEMORY_VALUE_A });
           updateMemory?.({
@@ -330,9 +344,34 @@ test("runner allows setMemory/updateMemory outside chatflow", async () => {
   });
 });
 
+test("runner deep clones input memory", async () => {
+  const workflow = new Workflow({
+    nodes: [
+      new Node({
+        handler: ({ memory }) => {
+          const nested = (memory as { nested?: { count?: number } })?.nested;
+          if (nested) {
+            nested.count = DEEP_MEMORY_VALUE_TWO;
+          }
+        },
+      }),
+    ],
+  });
+
+  const initialMemory = {
+    [DEEP_MEMORY_KEY]: { [DEEP_MEMORY_SUBKEY]: DEEP_MEMORY_VALUE_ONE },
+  };
+
+  const runner = new Runner();
+  await runner.run(workflow, { memory: initialMemory });
+
+  expect(initialMemory[DEEP_MEMORY_KEY][DEEP_MEMORY_SUBKEY]).toBe(
+    DEEP_MEMORY_VALUE_ONE,
+  );
+});
+
 test("chatflow requires conversationId", async () => {
   const workflow = new Workflow({
-    id: "chatflow-missing",
     type: "chatflow",
   });
   const runner = new Runner();

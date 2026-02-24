@@ -18,9 +18,6 @@ import {
 
 const CRON_EXPRESSION = "* * * * *";
 const JOB_ID = "job";
-const WORKFLOW_ID = "wf";
-const CHATFLOW_ID = "chatflow";
-const NODE_ID = "task";
 const EVENT_TYPE = "event.alpha";
 const EVENT_TYPE_B = "event.beta";
 const REGEX_EVENT = "event.regex";
@@ -52,32 +49,28 @@ class FailingRunStore implements RunStore {
   }
 }
 
-const createWorkflow = (): Workflow =>
-  new Workflow({
-    id: WORKFLOW_ID,
-    nodes: [
-      new Node({
-        id: NODE_ID,
-        handler: () => {
-          return { ok: true };
-        },
-      }),
-    ],
+const createWorkflow = (): Workflow => {
+  const node = new Node({
+    handler: () => {
+      return { ok: true };
+    },
   });
+  return new Workflow({
+    nodes: [node],
+  });
+};
 
-const createChatflow = (): Workflow =>
-  new Workflow({
-    id: CHATFLOW_ID,
-    type: "chatflow",
-    nodes: [
-      new Node({
-        id: NODE_ID,
-        handler: () => {
-          return { ok: true };
-        },
-      }),
-    ],
+const createChatflow = (): Workflow => {
+  const node = new Node({
+    handler: () => {
+      return { ok: true };
+    },
   });
+  return new Workflow({
+    type: "chatflow",
+    nodes: [node],
+  });
+};
 
 test("cron APIs throw without scheduler", () => {
   const orchestrator = new Orchestrator();
@@ -90,29 +83,32 @@ test("cron APIs throw without scheduler", () => {
 test("chatflow runWorkflow requires conversationId", async () => {
   const store = new InMemoryConversationStore();
   const orchestrator = new Orchestrator({ conversationStore: store });
-  orchestrator.registerWorkflow(createChatflow());
+  const chatflow = createChatflow();
+  orchestrator.registerWorkflow(chatflow);
 
-  await expect(orchestrator.runWorkflow(CHATFLOW_ID)).rejects.toThrow(
+  await expect(orchestrator.runWorkflow(chatflow.id)).rejects.toThrow(
     InvalidArgumentError,
   );
 });
 
 test("chatflow runWorkflow requires conversationStore", async () => {
   const orchestrator = new Orchestrator();
-  orchestrator.registerWorkflow(createChatflow());
+  const chatflow = createChatflow();
+  orchestrator.registerWorkflow(chatflow);
 
   await expect(
-    orchestrator.runWorkflow(CHATFLOW_ID, { conversationId: CONVERSATION_ID }),
+    orchestrator.runWorkflow(chatflow.id, { conversationId: CONVERSATION_ID }),
   ).rejects.toThrow(StateError);
 });
 
 test("registerCronWorkflow rejects chatflow", () => {
   const scheduler = new FakeScheduler();
   const orchestrator = new Orchestrator({ scheduler });
-  orchestrator.registerWorkflow(createChatflow());
+  const chatflow = createChatflow();
+  orchestrator.registerWorkflow(chatflow);
 
   expect(() =>
-    orchestrator.registerCronWorkflow(JOB_ID, CRON_EXPRESSION, CHATFLOW_ID),
+    orchestrator.registerCronWorkflow(JOB_ID, CRON_EXPRESSION, chatflow.id),
   ).toThrow(InvalidArgumentError);
 });
 
@@ -121,10 +117,8 @@ test("regex matcher resets lastIndex", async () => {
   let runs = ZERO;
 
   const workflow = new Workflow({
-    id: WORKFLOW_ID,
     nodes: [
       new Node({
-        id: NODE_ID,
         handler: () => {
           runs += ONE;
         },
@@ -152,10 +146,8 @@ test("array matcher handles wildcard and unregister", async () => {
   let runs = ZERO;
 
   const workflow = new Workflow({
-    id: WORKFLOW_ID,
     nodes: [
       new Node({
-        id: NODE_ID,
         handler: () => {
           runs += ONE;
         },
@@ -173,7 +165,7 @@ test("array matcher handles wildcard and unregister", async () => {
   await orchestrator.drain();
 
   expect(runs).toBe(ONE);
-  expect(orchestrator.unregisterWorkflow(WORKFLOW_ID)).toBe(true);
+  expect(orchestrator.unregisterWorkflow(workflow.id)).toBe(true);
 
   orchestrator.publish(EVENT_TYPE_B);
   await orchestrator.drain();
@@ -194,22 +186,24 @@ test("runStore errors invoke handler when provided", async () => {
     },
   });
 
-  orchestrator.registerWorkflow(createWorkflow());
+  const workflow = createWorkflow();
+  orchestrator.registerWorkflow(workflow);
 
-  const result = await orchestrator.runWorkflow(WORKFLOW_ID);
+  const result = await orchestrator.runWorkflow(workflow.id);
 
   expect(result.status).toBe("succeeded");
   expect(handled).toBe(ONE);
-  expect(handledId).toBe(WORKFLOW_ID);
+  expect(handledId).toBe(workflow.id);
 });
 
 test("runStore errors propagate without handler", async () => {
   const runStore = new FailingRunStore();
   const orchestrator = new Orchestrator({ runStore });
 
-  orchestrator.registerWorkflow(createWorkflow());
+  const workflow = createWorkflow();
+  orchestrator.registerWorkflow(workflow);
 
-  await expect(orchestrator.runWorkflow(WORKFLOW_ID)).rejects.toThrow(
+  await expect(orchestrator.runWorkflow(workflow.id)).rejects.toThrow(
     RuntimeError,
   );
 });
@@ -224,10 +218,8 @@ test("onWorkflowError swallows handler failures", async () => {
   });
 
   const workflow = new Workflow({
-    id: WORKFLOW_ID,
     nodes: [
       new Node({
-        id: NODE_ID,
         dependsOn: ["missing"],
         handler: () => {
           return { ok: false };

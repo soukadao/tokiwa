@@ -1,0 +1,8 @@
+**/*.test.ts
+AGENTS.md
+biome.json
+.editorconfig
+vitest.config.ts
+package.json
+tsconfig.json
+README.md

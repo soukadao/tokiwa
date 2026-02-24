@@ -7,7 +7,6 @@ import {
 import { Orchestrator } from "./orchestrator.js";
 
 const EVENT_TYPE = "chat.message";
-const WORKFLOW_ID = "chatflow-workflow";
 const CONVERSATION_ID = "conv-42";
 const MEMORY_KEY = "count";
 const UPDATED_COUNT = 1;
@@ -23,11 +22,9 @@ test("chatflow stores memory via conversation store", async () => {
   const orchestrator = new Orchestrator({ conversationStore: store });
 
   const workflow = new Workflow({
-    id: WORKFLOW_ID,
     type: "chatflow",
     nodes: [
       new Node({
-        id: "writer",
         handler: ({ updateMemory }) => {
           updateMemory?.({ [MEMORY_KEY]: UPDATED_COUNT });
         },
@@ -58,11 +55,9 @@ test("chatflow runs sequentially per conversation", async () => {
   const orchestrator = new Orchestrator({ conversationStore: store });
 
   const workflow = new Workflow({
-    id: "chatflow-seq",
     type: "chatflow",
     nodes: [
       new Node({
-        id: "increment",
         handler: async ({ getMemory, updateMemory }) => {
           const memory = getMemory?.() ?? {};
           const current =

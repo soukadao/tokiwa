@@ -122,6 +122,10 @@ export class Scheduler {
     await this.waitForInFlight();
   }
 
+  /**
+   * 次のタイマーティックをスケジュールする。
+   * デフォルト間隔の場合は次の分境界まで、それ以外はcheckIntervalMsで待機する。
+   */
   private scheduleNextCheck(): void {
     if (!this.isRunning) {
       return;
@@ -134,11 +138,18 @@ export class Scheduler {
     this.timerId = setTimeout(this.handleTick, delay);
   }
 
+  /**
+   * タイマーコールバック。ジョブの実行チェックを行い、次のティックを再スケジュールする。
+   */
   private handleTick = (): void => {
     void this.checkAndExecuteJobs();
     this.scheduleNextCheck();
   };
 
+  /**
+   * 全ジョブを現在時刻と照合し、一致するジョブを実行する。
+   * 同一分内での重複実行を防止するためミニットキーで管理する。
+   */
   private async checkAndExecuteJobs(): Promise<void> {
     const now = new Date();
     const minuteKey = Scheduler.buildMinuteKey(now);
@@ -162,6 +173,9 @@ export class Scheduler {
     }
   }
 
+  /**
+   * 保留中のsetTimeoutタイマーをクリアする。
+   */
   private clearTimer(): void {
     if (this.timerId) {
       clearTimeout(this.timerId);
@@ -169,6 +183,12 @@ export class Scheduler {
     }
   }
 
+  /**
+   * ジョブのハンドラーを実行し、エラー発生時はログに記録する。
+   * 実行中のジョブはinFlightセットで追跡される。
+   * @param job 実行対象のジョブ
+   * @returns ジョブ完了を表すPromise
+   */
   private runJob(job: Job): Promise<void> {
     const task = (async () => {
       try {
@@ -190,6 +210,9 @@ export class Scheduler {
     return task;
   }
 
+  /**
+   * 実行中の全ジョブが完了するまで待機する。
+   */
   private async waitForInFlight(): Promise<void> {
     if (this.inFlight.size === 0) {
       return;
@@ -197,6 +220,11 @@ export class Scheduler {
     await Promise.allSettled(this.inFlight);
   }
 
+  /**
+   * 現在時刻から次の分境界までのミリ秒数を計算する。
+   * @param now 現在時刻
+   * @returns 次の分境界までのミリ秒数
+   */
   private static getDelayUntilNextMinute(now: Date): number {
     const nextMinute = new Date(now);
     nextMinute.setSeconds(RESET_SECONDS, RESET_MILLISECONDS);
@@ -204,6 +232,11 @@ export class Scheduler {
     return nextMinute.getTime() - now.getTime();
   }
 
+  /**
+   * 指定された日時から分単位の一意キーを生成する。重複実行防止に使用される。
+   * @param date キー生成対象の日時
+   * @returns "年-月-日-時-分" 形式の文字列キー
+   */
   private static buildMinuteKey(date: Date): string {
     return [
       date.getFullYear(),

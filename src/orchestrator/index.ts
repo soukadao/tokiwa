@@ -2,10 +2,11 @@ export { Connection } from "./connection.js";
 export type { EventInit, EventMetadata } from "./event.js";
 export { Event } from "./event.js";
 export { EventDispatcher } from "./event-dispatcher.js";
-export type { EventQueue } from "./event-queue.js";
+export type { DequeuedEvent, EventQueue, QueueMessage } from "./event-queue.js";
 export type { NotificationInit, NotificationLevel } from "./notification.js";
 export { Notification } from "./notification.js";
 export type {
+  AckPolicy,
   CronJobHandler,
   CronScheduler,
   OrchestratorMode,

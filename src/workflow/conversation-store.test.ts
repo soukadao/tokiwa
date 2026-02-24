@@ -23,6 +23,8 @@ const VALUE_ONE = 1;
 const VALUE_TWO = 2;
 const VALUE_THREE = 3;
 const VALUE_FOUR = 4;
+const NESTED_KEY = "nested";
+const NESTED_COUNT_KEY = "count";
 const DELTA_TIMESTAMP = "2024-01-01T00:00:00.000Z";
 const BASE_MEMORY = { a: VALUE_ONE };
 const MEMORY_WITH_B = { a: VALUE_ONE, b: VALUE_TWO };
@@ -62,6 +64,26 @@ test("in-memory conversation store stores and clones", async () => {
   await store.delete(CONVERSATION_ID);
   const deleted = await store.get(CONVERSATION_ID);
   expect(deleted).toBeUndefined();
+});
+
+test("in-memory conversation store deep clones nested memory", async () => {
+  const store = new InMemoryConversationStore();
+  const input = { [NESTED_KEY]: { [NESTED_COUNT_KEY]: VALUE_ONE } };
+  await store.set(CONVERSATION_ID, input);
+
+  const memory = await store.get(CONVERSATION_ID);
+  expect(memory).toEqual(input);
+
+  const nested = (memory as { nested?: { count?: number } })?.nested;
+  if (nested) {
+    nested.count = VALUE_TWO;
+  }
+
+  expect(input[NESTED_KEY][NESTED_COUNT_KEY]).toBe(VALUE_ONE);
+
+  const stored = await store.get(CONVERSATION_ID);
+  const storedNested = (stored as { nested?: { count?: number } })?.nested;
+  expect(storedNested?.count).toBe(VALUE_ONE);
 });
 
 test("delta conversation store compacts after patches", async () => {

@@ -23,6 +23,8 @@ const DEFAULT_RETRY_MAX_DELAY_MS = 30_000;
 const DEFAULT_RETRY_JITTER_MS = 0;
 const CHATFLOW_REQUIRES_CONVERSATION_ID =
   "Chatflow requires conversationId to run.";
+const ABORT_ERROR_NAME = "AbortError";
+const ABORT_ERROR_MESSAGE = "Workflow aborted";
 
 export interface WorkflowRunOptions<Context = unknown, Input = unknown> {
   input?: Input;
@@ -104,8 +106,91 @@ export interface WorkflowRunResult {
   memory?: ConversationMemory;
 }
 
-const sleep = (ms: number): Promise<void> =>
-  new Promise((resolve) => setTimeout(resolve, ms));
+const createAbortError = (cause?: unknown): Error => {
+  const error = cause
+    ? new Error(ABORT_ERROR_MESSAGE, { cause })
+    : new Error(ABORT_ERROR_MESSAGE);
+  error.name = ABORT_ERROR_NAME;
+  return error;
+};
+
+const resolveAbortError = (reason: unknown): Error =>
+  reason instanceof Error ? reason : createAbortError(reason);
+
+const isAbortError = (error: unknown): error is Error =>
+  error instanceof Error && error.name === ABORT_ERROR_NAME;
+
+const throwIfAborted = (signal?: AbortSignal): void => {
+  if (!signal?.aborted) {
+    return;
+  }
+  throw resolveAbortError(signal.reason);
+};
+
+const withAbort = async <T>(
+  promise: Promise<T>,
+  signal?: AbortSignal,
+): Promise<T> => {
+  if (!signal) {
+    return promise;
+  }
+  if (signal.aborted) {
+    throw resolveAbortError(signal.reason);
+  }
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = (): void => {
+      cleanup();
+      reject(resolveAbortError(signal.reason));
+    };
+    const cleanup = (): void => {
+      signal.removeEventListener("abort", onAbort);
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+    promise.then(
+      (value) => {
+        cleanup();
+        resolve(value);
+      },
+      (error) => {
+        cleanup();
+        reject(error);
+      },
+    );
+  });
+};
+
+const sleep = (ms: number, signal?: AbortSignal): Promise<void> =>
+  new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(resolveAbortError(signal.reason));
+      return;
+    }
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+    let onAbort: (() => void) | undefined;
+    const cleanup = (): void => {
+      if (signal && onAbort) {
+        signal.removeEventListener("abort", onAbort);
+      }
+    };
+    onAbort = (): void => {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+      cleanup();
+      reject(resolveAbortError(signal?.reason));
+    };
+    timeoutId = setTimeout(() => {
+      cleanup();
+      resolve();
+    }, ms);
+    if (!signal) {
+      return;
+    }
+    signal.addEventListener("abort", onAbort, { once: true });
+    if (signal.aborted) {
+      onAbort();
+    }
+  });
 
 const resolveRetryPolicy = (policy?: {
   maxAttempts?: number;
@@ -155,11 +240,34 @@ const computeRetryDelayMs = (
   return boundedDelay + Math.random() * policy.jitterMs;
 };
 
-const cloneMemory = (memory: ConversationMemory): ConversationMemory => ({
-  ...memory,
-});
+const cloneMemory = (memory: ConversationMemory): ConversationMemory =>
+  structuredClone(memory);
 
+/**
+ * ワークフローの実行エンジン。
+ *
+ * ワークフロー内のノードを依存関係の順序に従って実行する。
+ * 同時実行数の制御、リトライポリシーによる再試行、
+ * および `AbortSignal` を利用した中断をサポートする。
+ */
 export class Runner {
+  /**
+   * ワークフローを実行し、すべてのノードを依存関係の順序に従って処理する。
+   *
+   * 依存関係のないノードから順に、設定された同時実行数（concurrency）の範囲内で
+   * 並列にノードを実行する。`failFast` が有効な場合、いずれかのノードでエラーが
+   * 発生した時点で残りの実行を中断する。chatflow タイプのワークフローでは
+   * `conversationId` が必須となり、同時実行数のデフォルトは 1 となる。
+   *
+   * @typeParam Context - ワークフロー全体で共有されるコンテキストの型
+   * @typeParam Input - ワークフローへの入力データの型
+   * @param workflow - 実行対象のワークフロー定義
+   * @param options - 実行オプション（入力値、コンテキスト、同時実行数、コールバック等）
+   * @returns 実行結果（ステータス、各ノードの結果・エラー、タイムライン等を含む）
+   * @throws {InvalidArgumentError} chatflow タイプで conversationId が未指定の場合
+   * @throws {DependencyError} ノードが存在しない依存先を参照している場合
+   * @throws {CyclicDependencyError} ワークフローに循環依存が含まれている場合
+   */
   async run<Context = unknown, Input = unknown>(
     workflow: Workflow<Context, Input>,
     options: WorkflowRunOptions<Context, Input> = {},
@@ -172,6 +280,14 @@ export class Runner {
     const timeline: WorkflowTimelineEntry[] = [
       { type: "run_start", timestamp: startedAt },
     ];
+    const abortController = new AbortController();
+    const signal = abortController.signal;
+    const abortRun = (cause?: unknown): void => {
+      if (signal.aborted) {
+        return;
+      }
+      abortController.abort(createAbortError(cause));
+    };
 
     const dependencies = new Map<string, Set<string>>();
     const dependents = new Map<string, Set<string>>();
@@ -257,6 +373,7 @@ export class Runner {
         attempts,
         timeline,
         options.conversationId,
+        signal,
         memoryState,
         getMemory,
         setMemory,
@@ -287,9 +404,10 @@ export class Runner {
             }
           }
         })
-        .catch(() => {
+        .catch((error) => {
           if (failFast) {
             aborted = true;
+            abortRun(error);
           }
         })
         .finally(() => {
@@ -345,6 +463,33 @@ export class Runner {
     };
   }
 
+  /**
+   * 単一ノードをリトライポリシーに基づいて実行する。
+   *
+   * ノードのハンドラを呼び出し、成功した場合は結果を `results` に格納する。
+   * 失敗した場合はリトライポリシー（最大試行回数、指数バックオフ、ジッター）に
+   * 従って再試行を行う。すべての試行が失敗した場合、またはアボートシグナルを
+   * 受信した場合はエラーをスローする。各段階でタイムラインエントリの記録と
+   * コールバックの呼び出しを行う。
+   *
+   * @typeParam Context - ワークフロー全体で共有されるコンテキストの型
+   * @typeParam Input - ワークフローへの入力データの型
+   * @param node - 実行対象のノード
+   * @param workflow - ノードが属するワークフロー定義
+   * @param runId - 今回の実行を識別する一意の ID
+   * @param options - ワークフロー実行オプション（コールバック等を含む）
+   * @param results - 各ノードの実行結果を格納する共有オブジェクト
+   * @param errors - 各ノードのエラーを格納する共有オブジェクト
+   * @param attempts - 各ノードの試行回数を格納する共有オブジェクト
+   * @param timeline - 実行タイムラインのエントリ配列
+   * @param conversationId - 会話 ID（chatflow の場合に使用）
+   * @param signal - 中断を検知するための AbortSignal
+   * @param memory - 会話メモリの現在の状態
+   * @param getMemory - 会話メモリを取得する関数
+   * @param setMemory - 会話メモリを置き換える関数
+   * @param updateMemory - 会話メモリを部分更新する関数
+   * @throws ノードの全リトライが失敗した場合、またはアボートされた場合にエラーをスローする
+   */
   private async runNode<Context = unknown, Input = unknown>(
     node: Node<Context, Input>,
     workflow: Workflow<Context, Input>,
@@ -355,6 +500,7 @@ export class Runner {
     attempts: Record<string, number>,
     timeline: WorkflowTimelineEntry[],
     conversationId: string | undefined,
+    signal: AbortSignal,
     memory: ConversationMemory | undefined,
     getMemory: () => ConversationMemory | undefined,
     setMemory: (next: ConversationMemory) => void,
@@ -362,36 +508,44 @@ export class Runner {
   ): Promise<void> {
     const policy = resolveRetryPolicy(node.retry);
     for (let attempt = 1; attempt <= policy.maxAttempts; attempt += 1) {
-      attempts[node.id] = attempt;
-      const nodeStart = new Date();
-      timeline.push({
-        type: "node_start",
-        nodeId: node.id,
-        timestamp: nodeStart,
-        attempt,
-      });
-
       try {
+        throwIfAborted(signal);
+        attempts[node.id] = attempt;
+        const nodeStart = new Date();
+        timeline.push({
+          type: "node_start",
+          nodeId: node.id,
+          timestamp: nodeStart,
+          attempt,
+        });
+
         if (options.onNodeStart) {
           await options.onNodeStart(node);
         }
 
-        const output = await node.handler({
-          workflowId: workflow.id,
-          nodeId: node.id,
-          runId,
-          conversationId,
-          context: options.context,
-          input: options.input,
-          event: options.event,
-          results,
-          getResult: <T = unknown>(nodeId: string) =>
-            results[nodeId] as T | undefined,
-          memory,
-          getMemory,
-          setMemory,
-          updateMemory,
-        });
+        throwIfAborted(signal);
+        const output = await withAbort(
+          Promise.resolve(
+            node.handler({
+              workflowId: workflow.id,
+              nodeId: node.id,
+              runId,
+              conversationId,
+              context: options.context,
+              input: options.input,
+              event: options.event,
+              results,
+              getResult: <T = unknown>(nodeId: string) =>
+                results[nodeId] as T | undefined,
+              memory,
+              getMemory,
+              setMemory,
+              updateMemory,
+              signal,
+            }),
+          ),
+          signal,
+        );
 
         results[node.id] = output;
 
@@ -413,6 +567,23 @@ export class Runner {
           error instanceof Error
             ? error
             : new RuntimeError(String(error), { cause: error });
+
+        if (isAbortError(err)) {
+          errors[node.id] = err;
+          timeline.push({
+            type: "node_error",
+            nodeId: node.id,
+            timestamp: new Date(),
+            attempt,
+            error: err,
+          });
+
+          if (options.onNodeError) {
+            await options.onNodeError(node, err);
+          }
+
+          throw err;
+        }
 
         if (attempt >= policy.maxAttempts) {
           errors[node.id] = err;
@@ -446,7 +617,29 @@ export class Runner {
         }
 
         if (nextDelayMs > 0) {
-          await sleep(nextDelayMs);
+          try {
+            await sleep(nextDelayMs, signal);
+          } catch (sleepError: unknown) {
+            const sleepErr =
+              sleepError instanceof Error
+                ? sleepError
+                : new RuntimeError(String(sleepError), { cause: sleepError });
+            if (isAbortError(sleepErr)) {
+              errors[node.id] = sleepErr;
+              timeline.push({
+                type: "node_error",
+                nodeId: node.id,
+                timestamp: new Date(),
+                attempt,
+                error: sleepErr,
+              });
+
+              if (options.onNodeError) {
+                await options.onNodeError(node, sleepErr);
+              }
+            }
+            throw sleepErr;
+          }
         }
       }
     }

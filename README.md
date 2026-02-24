@@ -7,38 +7,37 @@ Cron / Event / Workflow を統合する軽量オーケストレーター。イ�
 - EventDispatcher による購読配信（filter / once / wildcard）
 - ワークフロー（DAG）実行（依存解決・並列実行・fail-fast）
 - ノードのリトライ（バックオフ / ジッタ）
+- 分散ロックによる chatflow 排他 / Cron リーダー選出
 - Event トリガー／手動トリガーでワークフローを起動
 - Cron スケジュールからイベント発行／ワークフロー実行
 - Chatflow（会話メモリ）実行
+- 同一 conversationId の chatflow はプロセス内で直列化
 - 実行履歴（RunStore）保存
-- Snapshot で状態とメトリクスを取得
+- Snapshot で状態とメトリクスを取得（`snapshot()` は `async`）
 
 ## クイックスタート
 ```ts
-import { Orchestrator } from "./src/orchestrator/index.js";
-import { Workflow, Node } from "./src/workflow/index.js";
+import { Node, Orchestrator, Workflow } from "tokiwa";
 
-const WORKFLOW_ID = "order-flow";
 const EVENT_TYPE = "order.created";
-const ORDER_ID = "A-001";
+const ORDER_REF = "A-001";
 const MAX_CONCURRENT_EVENTS = 2;
 
+const validate = new Node({
+  name: "validate",
+  handler: async ({ input }) => ({ ok: true, input }),
+});
+const charge = new Node({
+  name: "charge",
+  dependsOn: [validate.id],
+  handler: async ({ getResult }) => {
+    const prev = getResult<{ ok: boolean }>(validate.id);
+    return { charged: !!prev?.ok };
+  },
+});
 const workflow = new Workflow({
-  id: WORKFLOW_ID,
-  nodes: [
-    new Node({
-      id: "validate",
-      handler: async ({ input }) => ({ ok: true, input }),
-    }),
-    new Node({
-      id: "charge",
-      dependsOn: ["validate"],
-      handler: async ({ getResult }) => {
-        const prev = getResult<{ ok: boolean }>("validate");
-        return { charged: !!prev?.ok };
-      },
-    }),
-  ],
+  name: "order-flow",
+  nodes: [validate, charge],
 });
 
 const orchestrator = new Orchestrator({
@@ -55,7 +54,7 @@ orchestrator.registerWorkflow(workflow, {
 });
 
 orchestrator.start();
-orchestrator.publish(EVENT_TYPE, { orderId: ORDER_ID });
+orchestrator.publish(EVENT_TYPE, { orderRef: ORDER_REF });
 ```
 
 ## 概念
@@ -63,8 +62,13 @@ orchestrator.publish(EVENT_TYPE, { orderId: ORDER_ID });
 - Subscriber: `type` で購読し、`filter` / `once` を指定可能。`*` でワイルドカード購読。
 - Trigger: `manual` / `event`。`eventType` は `string | string[] | RegExp | "*"`。`mapInput` / `mapContext` / `mapConversationId` でイベントから変換。
 - Workflow: DAG 構造のノード集合。`type: "workflow" | "chatflow"` を指定可能（既定は `workflow`）。
-- Runner: `failFast` の既定は `true`。`concurrency` は `workflow` で `4`、`chatflow` で `1` が既定。
-- Orchestrator: `maxConcurrentEvents`（イベント並列）と `workflowConcurrency`（トリガー後の並列）で制御。`snapshot()` でメトリクス取得。
+- Workflow / Node / Event / Notification / Connection の `id` はシステム生成です。`id` は指定できないため、参照は `workflow.id` / `node.id` を使用してください。
+- Runner: `failFast` の既定は `true`。`concurrency` は `workflow` で `4`、`chatflow` で `1` が既定。`failFast` 時は `NodeExecutionContext.signal` で中断通知します。
+- Orchestrator: `maxConcurrentEvents`（イベント並列）と `workflowConcurrency`（トリガー後の並列）で制御。`ackPolicy` で ACK 方針（`always` / `onSuccess`）を指定。`await snapshot()` でメトリクス取得。
+
+## ユーティリティ
+- `execCommand` / `execAsync` / `execFileAsync` で外部コマンド実行を補助します。
+- `runPerformance` / `measurePerformance` で簡易計測できます。
 
 ## 例
 以降の例では `workflow` / `orchestrator` の定義を一部省略しています。
@@ -73,16 +77,15 @@ orchestrator.publish(EVENT_TYPE, { orderId: ORDER_ID });
 ```ts
 const RETRY_COUNT = 0;
 
-const result = await orchestrator.runWorkflow("order-flow", {
-  input: { orderId: "A-001" },
+const result = await orchestrator.runWorkflow(workflow.id, {
+  input: { orderRef: "A-001" },
   context: { retryCount: RETRY_COUNT },
 });
 ```
 
 ### Cron 連携（DI）
 ```ts
-import { Scheduler } from "./src/cron/scheduler.js";
-import { Orchestrator } from "./src/orchestrator/index.js";
+import { Orchestrator, Scheduler } from "tokiwa";
 
 const CHECK_INTERVAL_MS = 60_000;
 const JOB_HEARTBEAT = "heartbeat";
@@ -90,22 +93,29 @@ const JOB_NIGHTLY = "nightly";
 const CRON_EVERY_5_MINUTES = "*/5 * * * *";
 const CRON_DAILY_MIDNIGHT = "0 0 * * *";
 const EVENT_TYPE = "system.heartbeat";
-const WORKFLOW_ID = "order-flow";
 
 const scheduler = new Scheduler({ checkIntervalMs: CHECK_INTERVAL_MS });
 const orchestrator = new Orchestrator({ scheduler });
 
 orchestrator.registerWorkflow(workflow);
 orchestrator.registerCronEvent(JOB_HEARTBEAT, CRON_EVERY_5_MINUTES, EVENT_TYPE);
-orchestrator.registerCronWorkflow(JOB_NIGHTLY, CRON_DAILY_MIDNIGHT, WORKFLOW_ID);
+orchestrator.registerCronWorkflow(
+  JOB_NIGHTLY,
+  CRON_DAILY_MIDNIGHT,
+  workflow.id,
+);
 
 orchestrator.start();
 ```
 
 ### Chatflow（会話メモリ）
 ```ts
-import { Orchestrator } from "./src/orchestrator/index.js";
-import { DeltaConversationStore, Workflow, Node } from "./src/workflow/index.js";
+import {
+  DeltaConversationStore,
+  Node,
+  Orchestrator,
+  Workflow,
+} from "tokiwa";
 
 type ChatPayload = { conversationId: string };
 
@@ -116,11 +126,11 @@ const store = new DeltaConversationStore({ directory: CONVERSATION_DIR });
 const orchestrator = new Orchestrator({ conversationStore: store });
 
 const chatflow = new Workflow({
-  id: "support-chat",
+  name: "support-chat",
   type: "chatflow",
   nodes: [
     new Node({
-      id: "memory",
+      name: "memory",
       handler: ({ updateMemory }) => {
         updateMemory?.({ lastMessageAt: Date.now() });
       },
@@ -142,8 +152,7 @@ orchestrator.start();
 
 ### 実行履歴の保存
 ```ts
-import { Orchestrator } from "./src/orchestrator/index.js";
-import { FileRunStore } from "./src/workflow/index.js";
+import { FileRunStore, Orchestrator } from "tokiwa";
 
 const RUNS_DIR = "./runs";
 
@@ -153,7 +162,7 @@ const orchestrator = new Orchestrator({ runStore });
 
 ### Worker / Producer モード
 ```ts
-import { Orchestrator, Queue } from "./src/orchestrator/index.js";
+import { Orchestrator, Queue } from "tokiwa";
 
 const sharedQueue = new Queue();
 const producer = new Orchestrator({ mode: "producer", queue: sharedQueue });
@@ -179,16 +188,16 @@ orchestrator.dispatcher.subscribe("*", async (event) => {
 
 ### ノードのリトライ
 ```ts
-import { Workflow, Node } from "./src/workflow/index.js";
+import { Node, Workflow } from "tokiwa";
 
 const MAX_ATTEMPTS = 3;
 const INITIAL_DELAY_MS = 500;
 
 const workflow = new Workflow({
-  id: "retry-flow",
+  name: "retry-flow",
   nodes: [
     new Node({
-      id: "unstable",
+      name: "unstable",
       retry: { maxAttempts: MAX_ATTEMPTS, initialDelayMs: INITIAL_DELAY_MS },
       handler: async () => {
         // retryable task
@@ -214,7 +223,7 @@ const workflow = new Workflow({
   - `registerCronWorkflow(jobId, cronExpression, workflowId, options?, name?)`
   - `removeCronJob(jobId)` / `isCronJobScheduled(jobId)`
   - `runWorkflow(workflowId, options?)`
-  - `snapshot()`
+  - `snapshot(): Promise<Snapshot>`
 - `EventDispatcher`
   - `subscribe(type, handler, options?)`
   - `unsubscribe(subscriberId)` / `clear(type?)` / `getSubscribers(type?)`
@@ -224,6 +233,8 @@ const workflow = new Workflow({
   - `run(workflow, options?)`（`WorkflowRunResult` に `timeline` / `attempts` / `memory` が含まれます）
 - `Scheduler`
   - `start()` / `stop()` / `addJob()` / `removeJob()` / `getNextExecutionTime()`
+- `LeaderScheduler`
+  - `start()` / `stop()` / `addJob()` / `removeJob()`
 - `Cron`
   - `matches(date)` / `getNextExecution(after?)`
 - `RunStore`
@@ -236,7 +247,7 @@ const workflow = new Workflow({
 ## Core
 - `createConfig` / `Config` / `createLogger` / `Logger` / `generateId` は core に集約しています。
 - `Config` / `Logger` はクラスとして提供されるため、用途に応じてインスタンスを生成して DI します。
-- `OrchestratorOptions` には `onWorkflowError`（トリガー経由の実行失敗フック）を指定できます。
+- `OrchestratorOptions` には `onWorkflowError`（トリガー経由の実行失敗フック）、`ackPolicy`、`conversationLock` を指定できます。
 - `chatflow` 実行には `conversationStore` と `conversationId` が必要です。
 - `runStore` を指定すると実行履歴が保存されます（`onRunStoreError` で保存失敗フック）。
 - `mode: "all" | "producer" | "worker"` と `queue` でワーカー分離構成にできます。
@@ -246,16 +257,16 @@ const workflow = new Workflow({
 - `src/core` 設定・ロガー・エラー・ID 生成・ファイルシステム・DB アダプタ
 - `src/orchestrator` オーケストレーターとイベント基盤
 - `src/workflow` ワークフロー実行系
-- `src/cron` Cron パーサー / Scheduler
+- `src/cron` Cron パーサー / Scheduler / LeaderScheduler
 - `src/utils` 汎用ユーティリティ
 
 ## セキュリティメモ
 - `generateId` は `crypto.randomUUID()` を使用します。
-- `utils/Command.exec` は `execFile` ベースで `command` と `args` を分離して実行します。
+- `utils/execCommand` は `execFile` ベースで `command` と `args` を分離して実行します。
 - `execAsync` は `allowShell: true` が必要で、シェル経由のため入力の検証が必要です。
 
 ## 開発
-- `pnpm start`（`examples/daemon.ts` を実行）
+- `pnpm build`（成果物は `dist` に出力され、npm 配布時は `dist` を参照します）
 - `pnpm test`
 - `pnpm coverage`
 - テスト対象は `src` 配下で、`src/utils` と `src/**/index.ts` はカバレッジ集計から除外しています。

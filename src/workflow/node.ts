@@ -1,4 +1,4 @@
-import { InvalidArgumentError } from "../core/index.js";
+import { generateId, InvalidArgumentError } from "../core/index.js";
 import type { ConversationMemory } from "./conversation-store.js";
 
 export interface NodeExecutionContext<Context = unknown, Input = unknown> {
@@ -9,6 +9,7 @@ export interface NodeExecutionContext<Context = unknown, Input = unknown> {
   context?: Context;
   input?: Input;
   event?: unknown;
+  signal?: AbortSignal;
   results: Record<string, unknown>;
   getResult<T = unknown>(nodeId: string): T | undefined;
   memory?: ConversationMemory;
@@ -36,7 +37,6 @@ export interface NodeDefinition<
   Input = unknown,
   Output = unknown,
 > {
-  id: string;
   name?: string;
   dependsOn?: string[];
   handler: NodeHandler<Context, Input, Output>;
@@ -65,6 +65,15 @@ const validateNumber = (value: number, name: string, min: number): number => {
   return value;
 };
 
+/**
+ * ワークフロー内の単一ノードを表すクラス。
+ * 各ノードはハンドラ関数、依存関係リスト、およびリトライポリシーを持ち、
+ * ワークフローの実行単位として動作する。
+ *
+ * @typeParam Context - ワークフロー全体で共有されるコンテキストの型
+ * @typeParam Input - ノードに渡される入力データの型
+ * @typeParam Output - ノードのハンドラが返す出力データの型
+ */
 export class Node<Context = unknown, Input = unknown, Output = unknown> {
   readonly id: string;
   readonly name?: string;
@@ -72,12 +81,18 @@ export class Node<Context = unknown, Input = unknown, Output = unknown> {
   readonly retry?: RetryPolicy;
   private readonly dependencies = new Set<string>();
 
+  /**
+   * NodeDefinition からノードを生成する。
+   * リトライポリシーが指定されている場合、各パラメータ（maxAttempts, initialDelayMs,
+   * backoffMultiplier, maxDelayMs, jitterMs）のバリデーションを行い、
+   * 不正な値が含まれている場合は {@link InvalidArgumentError} をスローする。
+   * また、dependsOn で指定された依存ノード ID を内部の依存関係セットに登録する。
+   *
+   * @param definition - ノードの定義オブジェクト（名前、ハンドラ、依存関係、リトライポリシーを含む）
+   * @throws {InvalidArgumentError} リトライポリシーのパラメータが不正な場合
+   */
   constructor(definition: NodeDefinition<Context, Input, Output>) {
-    if (!definition.id || definition.id.trim().length === 0) {
-      throw new InvalidArgumentError("Node id must be a non-empty string");
-    }
-
-    this.id = definition.id;
+    this.id = generateId();
     this.name = definition.name;
     this.handler = definition.handler;
     this.retry = definition.retry
@@ -132,10 +147,23 @@ export class Node<Context = unknown, Input = unknown, Output = unknown> {
     }
   }
 
+  /**
+   * 指定されたノード ID を依存関係として追加する。
+   * このノードは、追加された依存ノードの実行が完了するまで実行されない。
+   *
+   * @param nodeId - 依存先ノードの ID
+   */
   addDependency(nodeId: string): void {
     this.dependencies.add(nodeId);
   }
 
+  /**
+   * このノードが依存しているノード ID の一覧を返す。
+   * 返される配列は内部の依存関係セットのスナップショットであり、
+   * 変更しても元のデータには影響しない。
+   *
+   * @returns 依存先ノード ID の配列
+   */
   get dependsOn(): string[] {
     return Array.from(this.dependencies);
   }
